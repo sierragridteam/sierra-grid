@@ -1,11 +1,16 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import Button from '@sierragridteam/design-system/components/Button.astro';
+import GeoJSONMap from '@sierragridteam/design-system/components/GeoJSONMap.astro';
 import Logo from '@sierragridteam/design-system/components/Logo.astro';
+import '../styles/fieldbook.css';
 ---
-<BaseLayout title="Explorer foundation">
-  <main style="max-width: 70rem; margin: auto; padding: 2rem;">
-    <Logo siteName="Grid" />
-    <h1>Grid explorer foundation</h1>
-    <p>This is the shared starting point for the independent explorer bakeoff.</p>
-  </main>
+<BaseLayout title="Sierra / Following the evidence" description="Follow the evidence through the Sierra: sky, roads, land, earth, power and signals.">
+<a class="skip" href="#reading">Skip to the evidence</a>
+<header><Logo siteName="Grid" height={36}/><a href="?" class="masthead">Sierra / Following the evidence</a><span class="edition">One question opens another</span></header>
+<div class="scope"><label for="place">Geographic lens</label><select id="place"><option value="ebbetts-pass">Ebbetts Pass Corridor</option><option value="">All available places</option></select><Button variant="outline" size="sm" id="refresh">Refresh evidence</Button><span id="retrieval">Reading the live collection…</span><a href="?view=sources">Source ledger ↗</a></div>
+<div class="book"><nav id="chapters" aria-label="Evidence compass"></nav><main id="reading" tabindex="-1"><div id="content" aria-live="polite"></div></main></div>
+<footer><strong>S.I.E.R.R.A / Grid</strong><span>Observations are evidence, not an all-clear. Follow official instructions.</span><a href="?view=index">Complete collection index →</a></footer>
+<template id="geometry-template"><GeoJSONMap data={{type:"FeatureCollection",features:[]}} label="Reported geometry" compact /></template>
+<script>import '../lib/fieldbook';</script>
 </BaseLayout>

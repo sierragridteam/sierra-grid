@@ -16,7 +16,10 @@ make verify
 All observations come live from **https://data.sierragridteam.org** through the SDK.
 There is no demo or fixture mode. Read [the data inventory](docs/DATA_INVENTORY.md).
 
-The default development port is 8182. Preview branches use separate ports.
+This proposal uses development port 8184. Run `pnpm test:browser` separately
+while the development server is running; these checks read the live API and are
+not deterministic CI. See [the proposal report](BAKEOFF_REPORT.md),
+[coverage](COVERAGE.md) and [selected concept](CONCEPT.md).
 Shared library code comes from published `@sierragridteam/sdk` and
 `@sierragridteam/design-system` dependencies. Brand assets are copied from the DS
 package during dev/build, not maintained independently here.
