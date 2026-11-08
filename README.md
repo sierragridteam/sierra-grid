@@ -1,28 +1,26 @@
-# Sierra Grid
+# Sierra Grid — Crossing
 
-Standalone SIERRA data exploration, intended for `https://grid.sierragridteam.org`.
-The project is currently comparing three independent implementations before choosing
-and combining their strongest features. This main-branch foundation is deliberately
-minimal; it does not choose a layout or information architecture for the entrants.
+Explore real observations by moving between named places, then follow their weather, roads, hazards and infrastructure evidence.
+
+All observations come live from **https://data.sierragridteam.org** through the
+published Sierra SDK. There is no demo or fixture mode. Shared presentation uses
+`@sierragridteam/design-system`.
 
 Use Node 26.13.0 and pnpm 12.18.0:
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm dev
-make verify
+pnpm dev --host 127.0.0.1 --port 8183 --ignore-lock
 ```
 
-All observations come live from **https://data.sierragridteam.org** through the SDK.
-There is no demo or fixture mode. Read [the data inventory](docs/DATA_INVENTORY.md).
+Run `make verify` for deterministic tests, checking and build. `pnpm test:browser`
+is a separate live integration suite; it requires the local server and public API.
+It does not fabricate observations to make tests pass.
 
-The default development port is 8182. Preview branches use separate ports.
-Shared library code comes from published `@sierragridteam/sdk` and
-`@sierragridteam/design-system` dependencies. Brand assets are copied from the DS
-package during dev/build, not maintained independently here.
-
-Read [the common competition brief](docs/BAKEOFF.md) and [AGENTS.md](AGENTS.md).
-No production deployment is configured until the design review and selection.
+Read [the concept](CONCEPT.md), [coverage inventory](COVERAGE.md),
+[proposal report](BAKEOFF_REPORT.md), [shared brief](docs/BAKEOFF.md) and
+[data inventory](docs/DATA_INVENTORY.md). This is an independent review proposal for
+`grid.sierragridteam.org`; no production winner or deployment is selected.
 
 Copyright © 2026 Signal Integrity & Emergency Radio Response Alliance.
 All rights reserved.
