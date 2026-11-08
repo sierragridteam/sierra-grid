@@ -1,0 +1,10 @@
+import { chromium } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+const browser = await chromium.launch();
+const context = await browser.newContext();
+const page = await context.newPage();
+await page.goto('http://127.0.0.1:8184/?mode=demo&node=' + '2'.repeat(64));
+await page.locator('#coverage').getByText(/Returned archive/).waitFor();
+const results = await new AxeBuilder({ page }).analyze();
+console.log(JSON.stringify(results.violations.map(v => ({ id: v.id, impact: v.impact, description: v.description, nodes: v.nodes.map(n => n.target) })), null, 2));
+await browser.close();

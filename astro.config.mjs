@@ -5,6 +5,7 @@ const allowedHosts = Object.entries(process.env)
 export default defineConfig({
   site: 'https://grid.sierragridteam.org',
   output: 'static',
+  devToolbar: { enabled: false },
   server: { host: '0.0.0.0', port: 8182, allowedHosts },
   vite: { server: { strictPort: true } },
 });

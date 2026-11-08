@@ -1,0 +1,11 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createSierraClient } from '@sierragridteam/sdk';
+import { createFixtureFetch } from '@sierragridteam/sdk/fixtures';
+import { seriesPoints, gapCount, lastActivity } from '../src/lib/analysis.ts';
+const client = createSierraClient({ fetch: createFixtureFetch() });
+const telemetry = async (n) => (await client.getMeshTelemetry({ node: String(n).repeat(64), from: '2026-11-06T12:00:00Z', to: '2026-11-07T12:00:00Z' })).data;
+test('null versus zero are preserved', async () => { assert(seriesPoints(await telemetry(3), 'battery').every(p => p.value === null)); assert(seriesPoints(await telemetry(4), 'battery').some(p => p.value === 0)); });
+test('gaps split sampled lines and rates', async () => { let data = await telemetry(2); assert(gapCount(data) > 0); assert(seriesPoints(data, 'battery').some(p => p.value === null)); assert(seriesPoints(data, 'packets').filter(p => p.value === null).length > 1); });
+test('reboot never creates negative throughput', async () => { let data = await telemetry(4); assert(data.reboots.length); let points = seriesPoints(data, 'packets'); assert(points.every(p => p.value === null || p.value >= 0)); assert(points.filter(p => p.value === null).length >= 2); });
+test('liveness prioritizes relay and never uses event observedAt', () => { assert.equal(lastActivity({ observedAt: 'new', mesh: { telemetry: { lastRelayedAt: 'relay', lastHeardAt: 'heard' } } }), 'relay'); assert.equal(lastActivity({ observedAt: 'new', mesh: { telemetry: { lastHeardAt: 'heard' } } }), 'heard'); assert.equal(lastActivity({ observedAt: 'new' }), null); });

@@ -1,11 +1,48 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Logo from '@sierragridteam/design-system/components/Logo.astro';
+import Button from '@sierragridteam/design-system/components/Button.astro';
+import DataTable from '@sierragridteam/design-system/components/DataTable.astro';
+import TimeSeriesChart from '@sierragridteam/design-system/components/TimeSeriesChart.astro';
+import GeoJSONMap from '@sierragridteam/design-system/components/GeoJSONMap.astro';
+import MapFrame from '@sierragridteam/design-system/components/MapFrame.astro';
+import '../styles/explorer.css';
 ---
-<BaseLayout title="Explorer foundation">
-  <main style="max-width: 70rem; margin: auto; padding: 2rem;">
-    <Logo siteName="Grid" />
-    <h1>Grid explorer foundation</h1>
-    <p>This is the shared starting point for the independent explorer bakeoff.</p>
+<BaseLayout title="Mesh notebook">
+  <a href="#workspace" class="skip">Skip to investigation</a>
+  <header class="masthead"><Logo siteName="Grid" /><span class="mast-label">THE MESH NOTEBOOK</span><a href="https://sierragridteam.org">SIERRA ↗</a></header>
+  <section class="modebar" aria-label="Data mode"><strong id="mode-label">Connecting to live observations</strong><span id="clock"></span><Button id="mode-switch" variant="outline" size="sm">Explore synthetic demo</Button></section>
+  <main id="workspace">
+    <section class="intro"><div><p class="eyebrow">OBSERVE / COMPARE / INVESTIGATE</p><h1>Find the story in the mesh.</h1><p>Follow an observed connection. Compare the signals over time.<br class="desktop" /> Keep the evidence—and its limits—in view.</p></div><div class="notebook-no">FIELD NOTEBOOK <span>01 / MESH</span></div></section>
+    <form id="query" class="querybar">
+      <label>Observation window<select id="window"><option value="24">Last 24 hours</option><option value="72">Last 72 hours</option><option value="168">Last 7 days</option></select></label>
+      <label>Window ends (UTC)<input id="until" type="datetime-local" required /></label>
+      <Button type="submit" variant="primary">Apply window</Button><span id="bounds" class="small"></span>
+    </form>
+    <div id="health" class="notice" role="status">Loading source diagnostics…</div>
+    <div class="workbench">
+      <aside class="roster"><div class="section-heading"><h2>Node index</h2><span id="count" class="mono">—</span></div>
+        <label class="searchlabel" for="search">Search name or public key</label><input type="search" id="search" placeholder="Find a node…" />
+        <label class="searchlabel" for="filter">Show</label><select id="filter"><option value="all">All nodes</option><option value="unknown">Unknown battery</option><option value="low">Battery ≤ 20%</option><option value="unmonitored">No admin reading</option></select>
+        <div id="nodes" aria-live="polite"><p class="muted">Loading nodes…</p></div>
+        <Button id="retry" variant="outline" block>Refresh observations</Button>
+        <p class="small roster-note">Last activity uses relay time, then heard time. Silence is not proof of an outage.</p>
+      </aside>
+      <div class="canvas">
+        <section id="overview" class="panel"><div class="section-heading"><div><p class="eyebrow">01 / FOLLOW A CONNECTION</p><h2>Observed network</h2></div><span id="link-count" class="mono"></span></div>
+          <div class="network-grid"><div><MapFrame label="Mesh observation geography" caption="Observed undirected connections. Geometry only; this is not an RF coverage map."><div id="map-host"><GeoJSONMap data={{type:'FeatureCollection',features:[]}} label="Mesh nodes and observed links" selectable={false} /></div></MapFrame></div><div><h3>Connection ledger</h3><p class="small">Select an endpoint to open its notebook.</p><div id="links">Loading links…</div></div></div>
+        </section>
+        <section id="detail" class="panel" hidden><div class="section-heading"><div><p class="eyebrow">02 / READ THE SIGNAL</p><h2 id="node-title" tabindex="-1"></h2></div><Button id="close" variant="outline" size="sm">Back to network</Button></div>
+          <div id="node-facts"></div><div class="analysis-controls"><label>Compare with<select id="compare"><option value="">No comparison</option></select></label><label>Measure<select id="metric"><option value="battery">Battery (%)</option><option value="temperature">Temperature (°C)</option><option value="packets">Packets sent / minute</option><option value="snr">Last SNR (dB)</option></select></label><Button id="copy" variant="outline" size="sm">Copy investigation link</Button></div>
+          <div id="coverage" aria-live="polite"></div>
+          <TimeSeriesChart id="history-chart" label="Sampled telemetry" unit="%" series={[]} />
+          <div id="findings" class="findings"></div>
+          <details class="provenance"><summary>Identity &amp; source record</summary><div id="identity"></div></details>
+        </section>
+        <section class="panel archive"><div class="section-heading"><div><p class="eyebrow">03 / CHECK THE RECORD</p><h2>Change ledger</h2></div><Button id="load-history" variant="outline" size="sm">Load bounded history</Button></div><p class="small">Event revisions in the chosen [from, to) window. Snapshots are not telemetry samples. Includes mesh and road observations for context; coincidence does not establish causation.</p><div id="archive-status" role="status">Load the archive when you need to examine changes.</div><div id="archive-table" hidden><DataTable caption="Event revisions, newest first" columns={[{label:'Observed (UTC)'},{label:'Observation'},{label:'Revision'},{label:'Source'}]} /></div><Button id="more-history" variant="outline" size="sm" hidden>Load next page</Button></section>
+      </div>
+    </div>
+    <footer>SIERRA GRID <span>Public observations. Explicit uncertainty. All times UTC.</span><a href="https://data.sierragridteam.org">Data source ↗</a></footer>
   </main>
+  <script>import '../lib/explorer';</script>
 </BaseLayout>
