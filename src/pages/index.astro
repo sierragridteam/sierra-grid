@@ -1,11 +1,90 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Logo from '@sierragridteam/design-system/components/Logo.astro';
+import Button from '@sierragridteam/design-system/components/Button.astro';
+import '../styles/fieldnotes.css';
 ---
-<BaseLayout title="Explorer foundation">
-  <main style="max-width: 70rem; margin: auto; padding: 2rem;">
-    <Logo siteName="Grid" />
-    <h1>Grid explorer foundation</h1>
-    <p>This is the shared starting point for the independent explorer bakeoff.</p>
-  </main>
+<BaseLayout title="Crossing" description="A live reading of the Sierra. Follow weather, roads, fire decisions, power, earth and radio observations back to their evidence.">
+<a class="skip" href="#reading">Skip to reading</a>
+<header>
+<Logo siteName="Grid" href="/" />
+<span class="edition">CROSSING / A SIERRA OBSERVATORY</span>
+<a href="?chapter=sources" class="source-link">Behind the reading ↗</a>
+</header>
+<div class="book">
+<aside class="margin">
+<p class="eyebrow">Look closer</p>
+<nav id="chapters" aria-label="Chapters">
+</nav>
+<div class="margin-note">
+<span class="asterisk">✳</span>
+<p>Every crossing has more than one story.</p>
+<small>Follow the evidence.<br/>Keep its limits in view.</small>
+</div>
+</aside>
+<main id="reading">
+<section class="opening">
+<div class="issue">
+<span>SIERRA NEVADA · CALAVERAS & BEYOND</span>
+<span id="edition-date">
+</span>
+</div>
+<h1>Between foothill<br/>&amp; <em>high country.</em>
+</h1>
+<p class="dek">Move through a landscape of observations. Pause at a place. Follow what the sky, the ground, and the people’s infrastructure reveal.</p>
+<div class="crossing">
+<div class="crossing-label">
+<span class="eyebrow">AN OBSERVATIONAL TRANSECT</span>
+<span>Foothills → Mountain pass</span>
+</div>
+<nav id="stops" aria-label="Stops along the crossing">
+</nav>
+<label class="slider-label" for="crossing-position">Move through the crossing</label>
+<input id="crossing-position" type="range" min="0" max="4" value="0" step="1" aria-valuetext="Murphys"/>
+<small>Named places, not a computed driving route. Select a stop to change the reading below.</small>
+</div>
+<div class="place-line">
+<label for="place">Or explore a different place</label>
+<select id="place" aria-label="Place">
+<option value="ebbetts-pass">Ebbetts Pass</option>
+</select>
+<Button id="place-note" variant="ghost" size="sm">About this place ↗</Button>
+</div>
+<div id="connections">
+</div>
+<p id="reading-note" class="note">Retrieving a live reading…</p>
+</section>
+<section class="chapter">
+<div class="chapter-title">
+<span id="chapter-number">01</span>
+<div>
+<p class="eyebrow" id="chapter-kicker">THE SKY</p>
+<h2 id="question">What is the air telling us?</h2>
+</div>
+</div>
+<p id="chapter-intro" class="intro">
+</p>
+<nav id="collections" aria-label="Explore this chapter">
+</nav>
+<div id="controls">
+</div>
+<div id="evidence" aria-live="polite" aria-busy="true">
+</div>
+</section>
+<footer>
+<p>Observations, not an all-clear.</p>
+<small>Live public data from SIERRA. No automatic refresh. Weather forecasts are predictions; event revisions are stored changes, not continuous measurements. For urgent decisions, follow official sources.</small>
+<a href="?chapter=sources">Read the sources and limits →</a>
+</footer>
+</main>
+</div>
+<dialog id="detail" aria-labelledby="detail-title">
+<div class="detail-toolbar">
+<span class="eyebrow">CROSSING / EVIDENCE</span>
+<Button id="close-detail" variant="outline" size="sm">Close ×</Button>
+</div>
+<div id="detail-content">
+</div>
+</dialog>
+<script>import '../lib/fieldnotes';</script>
 </BaseLayout>
