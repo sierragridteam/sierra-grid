@@ -1,11 +1,40 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Logo from '@sierragridteam/design-system/components/Logo.astro';
+import Button from '@sierragridteam/design-system/components/Button.astro';
+import DataTable from '@sierragridteam/design-system/components/DataTable.astro';
+import GeoJSONMap from '@sierragridteam/design-system/components/GeoJSONMap.astro';
+import TimeSeriesChart from '@sierragridteam/design-system/components/TimeSeriesChart.astro';
+import '../styles/bench.css';
 ---
-<BaseLayout title="Explorer foundation">
-  <main style="max-width: 70rem; margin: auto; padding: 2rem;">
-    <Logo siteName="Grid" />
-    <h1>Grid explorer foundation</h1>
-    <p>This is the shared starting point for the independent explorer bakeoff.</p>
+<BaseLayout title="Mesh investigation bench">
+  <a class="skip" href="#main">Skip to investigation</a>
+  <header class="masthead"><Logo siteName="Grid" /><div class="edition">FIELD OBSERVATORY <span>Calaveras & beyond</span></div><a href="https://sierragridteam.org">SIERRA home ↗</a></header>
+  <div class="modebar" role="region" aria-label="Data mode"><strong id="mode-label">Connecting to live observations</strong><span id="clock"></span><a id="mode-switch" href="?mode=demo">Explore synthetic demo</a></div>
+  <main id="main">
+    <div class="intro"><div><p class="eyebrow">01 / MESH INVESTIGATION BENCH</p><h1>Follow the signal.<br/><em>Question the gaps.</em></h1></div><p>Start with a node. Trace its observed neighbors, compare sampled history, and separate a quiet radio from missing evidence.</p></div>
+    <form id="filters" class="toolbar">
+      <label>Find a node<input class="input" id="search" type="search" placeholder="Name or public key" /></label>
+      <label>Place<select id="place" class="select"><option value="">All places</option></select></label>
+      <label>Evidence<select id="evidence" class="select"><option value="all">All nodes</option><option value="recent">Heard within 24h</option><option value="quiet">Older or unknown</option><option value="unmonitored">No admin reading</option></select></label>
+      <label>Investigation window<select id="window" class="select"><option value="6">Last 6 hours</option><option value="24">Last 24 hours</option><option value="72">Last 72 hours</option></select></label>
+      <Button id="refresh" variant="outline">Refresh</Button>
+    </form>
+    <div id="health" class="health" role="status">Reading source diagnostics…</div>
+    <div class="workspace">
+      <section class="ledger panel" aria-labelledby="ledger-title"><div class="panelhead"><div><p class="eyebrow">START HERE</p><h2 id="ledger-title">Node ledger <span id="node-count"></span></h2></div><span class="small">Select to investigate →</span></div><p id="list-status" role="status">Loading node observations…</p><div id="nodes"></div><div class="ledger-note">Liveness uses last relayed, then last heard. “Older” is not evidence of failure. Batteries describe the latest admin reading.</div></section>
+      <section class="topology panel" aria-labelledby="topology-title"><div class="panelhead"><div><p class="eyebrow">OBSERVED CONNECTIONS</p><h2 id="topology-title">A network of evidence</h2></div><span id="link-count" class="small"></span></div><div id="network"></div><p id="link-status" class="small" role="status">Loading links…</p><details class="geography"><summary>Geographic context</summary><div id="map-holder"><GeoJSONMap label="Node observation locations" data={{type:'FeatureCollection',features:[]}} /></div></details><p class="fine">Lines record undirected observations within the selected window. They do not establish RF coverage or a complete network topology. Outside endpoints retain their identity.</p></section>
+    </div>
+    <section id="detail" class="analysis panel" hidden aria-labelledby="detail-title">
+      <div class="panelhead"><div><p class="eyebrow">02 / NODE NOTEBOOK</p><h2 id="detail-title" tabindex="-1">Select a node</h2></div><Button id="close" variant="ghost">Close notebook ↑</Button></div>
+      <div id="identity"></div>
+      <div class="analysis-toolbar"><label>Compare with<select id="compare" class="select"><option value="">No comparison</option></select></label><label>Sampled measure<select id="metric" class="select"><option value="batteryPercent">Battery · %</option><option value="lastSnrDb">Signal-to-noise · dB</option><option value="lastRssiDbm">Received signal · dBm</option><option value="packets">Received packets · per minute</option><option value="temperatureC">Temperature · °C</option></select></label><label>Archive ending (UTC)<input id="archive-end" type="datetime-local" class="input" /></label><Button id="copy" variant="outline">Copy investigation link</Button><span id="copy-status" role="status"></span></div>
+      <p id="bounds" class="small mono"></p><div id="archive-status" role="status"></div>
+      <TimeSeriesChart id="history-chart" label="Sampled history" series={[]} unit="%" />
+      <div class="evidence-grid"><section><h3>Reading the record</h3><div id="findings"></div></section><section><h3>Observed neighbors</h3><div id="neighbors"></div></section></div>
+      <details id="revisions"><summary>Event revision trail <span id="revision-count"></span></summary><p class="fine">Snapshots of the event record, not telemetry samples. Bounds are half-open [from, to); place filters on archive APIs can refer to current attachments.</p><div id="revision-status" role="status"></div><DataTable caption="Event revisions in the investigation window" columns={[{label:'Observed (UTC)'},{label:'Revision'},{label:'State'},{label:'Source'}]}><tr><td colspan="4">Select a node to read its revisions.</td></tr></DataTable></details>
+    </section>
+    <footer><strong>S.I.E.R.R.A / Grid</strong><p>Public observations. Explicit uncertainty.<br/>All times UTC. Source health and observation freshness are separate signals.</p><a href="https://data.sierragridteam.org">Data & provenance ↗</a></footer>
   </main>
+  <script>import '../lib/bench';</script>
 </BaseLayout>

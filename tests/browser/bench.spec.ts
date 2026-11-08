@@ -1,0 +1,64 @@
+import { test, expect } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+const node=(n:string)=>'meshcore:'+n.repeat(64);
+test('investigate, compare, change metric and restore a shared URL',async({page})=>{
+ await page.goto('/?mode=demo');
+ await expect(page.locator('#nodes .node')).toHaveCount(6);
+ await page.getByRole('button',{name:/Summit Relay HEARD/}).click();
+ await expect(page.locator('#archive-status')).toContainText('returned samples');
+ await expect(page.locator('#detail-title')).toHaveText('Summit Relay');
+ await page.locator('#compare').selectOption(node('4'));
+ await expect(page.locator('#archive-status')).toContainText('Ridge Relay');
+ await page.locator('#metric').selectOption('packets');
+ await expect(page.locator('#findings')).toContainText('counter resets');
+ await expect(page.locator('#findings')).toContainText('reported reboot');
+ await page.locator('#revisions summary').click();
+ await expect(page.locator('#revisions tbody tr')).toHaveCount(2);
+ const url=page.url();await page.reload();
+ await expect(page.locator('#detail-title')).toHaveText('Summit Relay');
+ await expect(page.locator('#compare')).toHaveValue(node('4'));
+ await expect(page.locator('#metric')).toHaveValue('packets');
+ expect(page.url()).toBe(url);
+ await page.locator('#close').click();
+ await expect(page.locator('#detail')).toBeHidden();
+ await page.goBack();await expect(page.locator('#detail')).toBeVisible();
+});
+test('search, evidence filter, partial pagination and node-specific failure',async({page})=>{
+ await page.goto('/?mode=demo&scenario=partial');
+ await expect(page.locator('#nodes .node')).toHaveCount(6);
+ await page.locator('#search').fill('valley');await expect(page.locator('#nodes .node')).toHaveCount(1);
+ await page.locator('#nodes .node').click();await expect(page.locator('#archive-status')).toContainText('telemetry unavailable');
+ await page.locator('#search').fill('summit');await page.locator('#nodes .node').click();
+ await expect(page.locator('#archive-status')).toContainText('PARTIAL / TRUNCATED');
+ await page.locator('#search').fill('');await page.locator('#evidence').selectOption('unmonitored');
+ await expect(page.locator('#nodes')).toContainText('Pine Companion');
+});
+test('empty, unavailable and stale remain distinct',async({page})=>{
+ await page.goto('/?mode=demo&scenario=empty');await expect(page.locator('#nodes')).toContainText('No node observations');
+ await page.goto('/?mode=demo&scenario=unavailable');await expect(page.locator('#list-status')).toContainText('unavailable');
+ await page.locator('#refresh').click();await expect(page.locator('#list-status')).toContainText('unavailable');
+ await page.goto('/?mode=demo&scenario=stale');await expect(page.locator('#health')).toContainText('STALE');
+ await expect(page.locator('#nodes .node')).toHaveCount(6);
+});
+test('narrow investigation and accessibility',async({page})=>{
+ await page.setViewportSize({width:390,height:844});await page.goto('/?mode=demo');
+ await expect(page.locator('.masthead .logo')).toBeVisible();
+ await expect(page.locator('#nodes .node')).toHaveCount(6);await page.locator('#nodes .node').first().click();
+ await expect(page.locator('#archive-status')).toContainText('returned samples');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ const results=await new AxeBuilder({page}).analyze();
+ expect(results.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)}))).toEqual([]);
+});
+test('place filter preserves outside endpoint and historical window is shareable',async({page})=>{
+ await page.goto('/?mode=demo');await expect(page.locator('#nodes .node')).toHaveCount(6);
+ const place=await page.locator('#place option').nth(1).getAttribute('value');
+ await page.locator('#place').selectOption(place!);
+ await expect(page.locator('#network')).toContainText('outside filter');
+ await page.locator('#search').fill('Summit');await page.locator('#nodes .node').click();
+ await expect(page.locator('#archive-status')).toContainText('returned samples');
+ await page.locator('#archive-end').fill('2026-11-06T12:00');
+ await page.locator('#archive-end').dispatchEvent('change');
+ await expect(page.locator('#archive-status')).toContainText('0 returned samples');
+ expect(new URL(page.url()).searchParams.get('to')).toBe('2026-11-06T12:00:00.000Z');
+ await page.reload();await expect(page.locator('#archive-end')).toHaveValue('2026-11-06T12:00');
+});
