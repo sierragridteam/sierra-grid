@@ -1,7 +1,26 @@
 # Sierra Grid — Three Tenses
 
-A live-only exploration proposal organized around Now, Ahead and Recorded.
+Explore what is observed now, what is expected ahead, and what has been retained in the record.
 
-Use the repository-pinned Node/pnpm environment. Install with `pnpm install --frozen-lockfile`, validate with `make verify`, and run locally with `pnpm dev --host 127.0.0.1 --port 8185 --ignore-lock`.
+All observations come live from **https://data.sierragridteam.org** through the
+published Sierra SDK. There is no demo or fixture mode. Shared presentation uses
+`@sierragridteam/design-system`.
 
-`pnpm test:browser` is a separate live integration suite requiring that local server and access to `https://data.sierragridteam.org`. It never fabricates observations. See CONCEPT.md, COVERAGE.md and BAKEOFF_REPORT.md for the design, route inventory, verification evidence and limitations.
+Use Node 26.13.0 and pnpm 12.18.0:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm dev --host 127.0.0.1 --port 8185 --ignore-lock
+```
+
+Run `make verify` for deterministic tests, checking and build. `pnpm test:browser`
+is a separate live integration suite; it requires the local server and public API.
+It does not fabricate observations to make tests pass.
+
+Read [the concept](CONCEPT.md), [coverage inventory](COVERAGE.md),
+[proposal report](BAKEOFF_REPORT.md), [shared brief](docs/BAKEOFF.md) and
+[data inventory](docs/DATA_INVENTORY.md). This is an independent review proposal for
+`grid.sierragridteam.org`; no production winner or deployment is selected.
+
+Copyright © 2026 Signal Integrity & Emergency Radio Response Alliance.
+All rights reserved.
