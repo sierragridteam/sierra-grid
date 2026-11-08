@@ -30,7 +30,7 @@ be any directory slug. No fixed observation ids are needed to discover evidence.
 | All map projections | Sources & scope → Geographic evidence | All 13 API layers; nested geometry/property/metadata records, no omitted fields. Supports inspection, not a full interactive cartographic view. |
 | Stored AI I/O | Event → Advanced attribution → Read stored AI input/output | Explicit on-demand `enhancementIo: true`, separate cache key, current-record revision and absent I/O labeled. No model call or write. Archived I/O is available via Read revisions with stored AI I/O, with explicit continuation. |
 | Event provenance/relationships | Any event → evidence | Stable id, source attribution/URLs, place ids, geometry/bbox/centroid, effective/expiry/observation/storage/fetch clocks, revision, enhancement model/time/fields. Supplemental full structured record. |
-| Global/per-event history | Every event collection → revision archive; event → revision history | Date bounds only on global history. Current attachments caveat. User-driven continuation tokens; 30 events/page or 20 per-event revisions/page, ten-page visit limit. Global archive URL retains selected snapshot and loaded-page count. |
+| Global/per-event history | Every event collection → revision archive; event → revision history | Date bounds only on global history. Current attachments caveat. User-driven continuation tokens; 30 events/page with ten-page global visit limit; per-event history allows explicit continuation in 20-revision pages. Global archive URL retains selected snapshot and loaded-page count. |
 
 ## Public access limits
 

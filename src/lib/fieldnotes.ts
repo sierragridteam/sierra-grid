@@ -53,6 +53,7 @@ const units: Record<string, string> = {
   depthKm: "km",
   acres: "acres",
   containmentPercent: "%",
+  containment: "%",
   batteryVolts: "V",
   batteryPercent: "%",
   pressure: "hPa",
@@ -525,6 +526,7 @@ async function loadEvents(layer: PublicLayer, gen: number, more = false) {
       `<div id="pagination"><p class="note">${pageToken ? "Partial reading — more records remain." : "End of this result set; no continuation token."} ${mode === "history" ? "Archive bounds are UTC, start inclusive/end exclusive. Current place attachments filter historical records." : ""}</p>${pageToken && eventPages < 10 ? button("Read the next page", "more") : pageToken ? "<p>Ten-page visit bound reached. Narrow your scope to continue.</p>" : ""}${link("Open the regional shelf →", { place: "all", item: null })}</div>`,
     );
   } catch (e) {
+    if (gen !== generation) return;
     $("#evidence").insertAdjacentHTML("beforeend", errorBox(e));
   }
 }
@@ -700,7 +702,7 @@ async function revisions(more = false, io = false) {
     );
     el.insertAdjacentHTML(
       "beforeend",
-      `<div id="revision-more"><p class="note">${revisionToken ? "Partial archive; further revisions remain." : "End of this event’s returned archive."}</p>${revisionToken && revisionPages < 10 ? button("Read older revisions", "revision-more") : ""}</div>`,
+      `<div id="revision-more"><p class="note">${revisionToken ? "Partial archive; further revisions remain. Each action reads up to 20 more revisions; nothing loads automatically." : "End of this event’s returned archive."}</p>${revisionToken ? button("Read older revisions", "revision-more") : ""}</div>`,
     );
   } catch (e) {
     el.insertAdjacentHTML("beforeend", errorBox(e));
