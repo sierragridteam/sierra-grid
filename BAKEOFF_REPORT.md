@@ -135,3 +135,7 @@ The coordinator’s broader WCAG 2.1 A scan also found `label-content-name-misma
 on schematic node links: visible key text is absent from the accessible name. This
 is a candidate issue, separate from the corrected shared Logo. The original browser
 suite omitted the `wcag21a` tag and did not catch it.
+
+CodeQL also flagged a select control’s DOM value interpolated into HTML. The
+coordinator escaped that value before publishing the final review revision; this
+security hardening does not change the proposal’s features or comparison score.
