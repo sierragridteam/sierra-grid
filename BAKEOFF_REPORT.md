@@ -130,3 +130,8 @@ these patches. Independent WCAG 2/2.1 A/AA checks include `wcag21a`.
 Local freshness evaluation can replace an authoritative UNAVAILABLE source status with STALE. Live investigation links use relative windows, so they do not reproduce an absolute historical interval. These are review findings to resolve before production.
 
 This is a competing review proposal, not a production-ready or selected implementation.
+
+The coordinator’s broader WCAG 2.1 A scan also found `label-content-name-mismatch`
+on schematic node links: visible key text is absent from the accessible name. This
+is a candidate issue, separate from the corrected shared Logo. The original browser
+suite omitted the `wcag21a` tag and did not catch it.
