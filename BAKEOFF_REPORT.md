@@ -115,3 +115,18 @@ and scenario selector retain the rest of the investigation state.
   archive, outside requested coverage, truncated response and missing samples.
 
 No shared blocker, fork, production deployment, merge or dependency upgrade was used.
+
+## Coordinator review, 7 November 2026
+
+The independent implementation above was completed against SDK 0.1.0 and DS 0.5.0.
+All three entrants then received the same registry patches: SDK **0.1.1** (consistent
+fixture Point geometry) and DS **0.5.1** (natural whitespace in the accessible logo name).
+These supersede the original frozen-version and logo-issue notes above. Candidate A’s
+local logo workaround was removed; all entrants now use the shared fix.
+
+The coordinator reran `make verify` and the full browser suite successfully after
+these patches. Independent WCAG 2/2.1 A/AA checks include `wcag21a`.
+
+Local freshness evaluation can replace an authoritative UNAVAILABLE source status with STALE. Live investigation links use relative windows, so they do not reproduce an absolute historical interval. These are review findings to resolve before production.
+
+This is a competing review proposal, not a production-ready or selected implementation.
