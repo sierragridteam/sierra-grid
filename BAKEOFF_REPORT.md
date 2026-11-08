@@ -108,3 +108,18 @@ listed rather than drawn as a chart overlay. Source attribution is linked per no
 
 No foundation blocker required a private fork. Root notified all entrants of the
 fixture centroid inconsistency; this implementation uses `geometry.object` already.
+
+## Coordinator review, 7 November 2026
+
+The independent implementation above was completed against SDK 0.1.0 and DS 0.5.0.
+All three entrants then received the same registry patches: SDK **0.1.1** (consistent
+fixture Point geometry) and DS **0.5.1** (natural whitespace in the accessible logo name).
+These supersede the original frozen-version and logo-issue notes above. Candidate A’s
+local logo workaround was removed; all entrants now use the shared fix.
+
+The coordinator reran `make verify` and the full browser suite successfully after
+these patches. Independent WCAG 2/2.1 A/AA checks include `wcag21a`.
+
+The candidate’s per-event revision request supplies unsupported date bounds; its displayed revision window is not enforced by the real endpoint. Rates/gaps use storage time rather than measurement time. Later page failures discard earlier pages, and mixed known/unknown cadences can connect unknown gauge samples. These are review findings to resolve before production.
+
+This is a competing review proposal, not a production-ready or selected implementation.

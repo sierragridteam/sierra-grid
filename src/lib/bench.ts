@@ -7,7 +7,6 @@ const esc = (value: unknown) => String(value ?? '').replace(/[&<>"']/g,c=>({'&':
 const date = (at: string | null | undefined) => at ? new Date(at).toISOString().replace('T',' ').replace('.000Z',' UTC') : 'Unknown';
 const shortKey = (key:string) => key.replace('meshcore:','').slice(0,10)+'…';
 const safeUrl = (url:string) => { try { const u=new URL(url); return ['https:','http:'].includes(u.protocol)?esc(u.href):'#'; } catch { return '#'; } };
-document.querySelector('.logo')?.removeAttribute('aria-label');
 let ctx = createExplorerContext(location.search);
 let params = new URLSearchParams(location.search);
 let nodes: V1Event[] = [], links: MeshLink[] = [], linksError = '', listError = '', incomplete=false;
