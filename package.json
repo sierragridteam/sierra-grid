@@ -1,0 +1,35 @@
+{
+  "name": "sierra-grid",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=26.13.0"
+  },
+  "scripts": {
+    "dev": "node scripts/brand.mjs && astro dev",
+    "build": "node scripts/brand.mjs && astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {
+    "@sierragridteam/design-system": "^0.5.0",
+    "@sierragridteam/sdk": "^0.1.0",
+    "astro": "^7.4.7",
+    "maplibre-gl": "^6.17.0",
+    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
+    "@fontsource-variable/newsreader": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "@playwright/test": "^1.65.0",
+    "@axe-core/playwright": "^4.14.0",
+    "@types/node": "^26.6.6",
+    "typescript": "^6.0.3"
+  }
+}

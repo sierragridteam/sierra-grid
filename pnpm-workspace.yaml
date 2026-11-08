@@ -1,0 +1,8 @@
+packages:
+  - '.'
+allowBuilds:
+  esbuild: true
+  sharp: true
+overrides:
+  '@emnapi/runtime': 1.11.3
+minimumReleaseAge: 0
