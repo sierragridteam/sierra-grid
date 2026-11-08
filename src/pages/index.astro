@@ -1,11 +1,24 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Logo from '@sierragridteam/design-system/components/Logo.astro';
+import Button from '@sierragridteam/design-system/components/Button.astro';
+import DataTable from '@sierragridteam/design-system/components/DataTable.astro';
+import MapFrame from '@sierragridteam/design-system/components/MapFrame.astro';
+import TimeSeriesChart from '@sierragridteam/design-system/components/TimeSeriesChart.astro';
+import '../styles/explorer.css';
 ---
-<BaseLayout title="Explorer foundation">
-  <main style="max-width: 70rem; margin: auto; padding: 2rem;">
-    <Logo siteName="Grid" />
-    <h1>Grid explorer foundation</h1>
-    <p>This is the shared starting point for the independent explorer bakeoff.</p>
-  </main>
+<BaseLayout title="Mesh evidence desk">
+ <a class="skip" href="#workspace">Skip to investigation</a>
+ <header><Logo siteName="Grid" /><div class="mast-note">SIERRA OBSERVATORY <span>Independent signals. Shared understanding.</span></div><a href="https://sierragridteam.org">SIERRA ↗</a></header>
+ <div class="modebar"><span id="mode-label">Connecting to live public data</span><div><label for="scenario">Demo scenario</label> <select id="scenario"><option>normal</option><option>empty</option><option>stale</option><option>partial</option><option>unavailable</option></select><Button id="mode-switch" variant="outline" size="sm">Switch to demo</Button></div></div>
+ <main id="workspace">
+ <section class="intro"><div><p class="eyebrow">FIELD DESK / MESH INVESTIGATION</p><h1>Follow the evidence.</h1><p>Trace observed connections. Inspect the gaps. Find what changed.</p></div><div class="clock"><span>REFERENCE CLOCK · UTC</span><strong id="clock">—</strong><Button id="refresh" variant="outline" size="sm">Refresh observations</Button></div></section>
+ <div id="health" class="notice" role="status">Loading source diagnostics…</div>
+ <form id="filters" class="filters"><label>Find a node<input id="search" type="search" placeholder="Name or public key" /></label><label>Place<select id="place"><option value="">All places</option></select></label><label>Monitor verdict<select id="verdict"><option value="">Any verdict</option><option value="REACHABLE">Reachable</option><option value="UNREACHABLE">Unreachable</option><option value="MESH_REACHABILITY_UNSPECIFIED">Unmonitored</option></select></label><label>Lookback<select id="window"><option value="24">24 hours</option><option value="72">72 hours</option><option value="168">7 days</option></select></label><Button id="share" variant="outline">Copy investigation link</Button></form>
+ <div class="desk"><aside class="roster"><div class="sectionhead"><h2>Node index</h2><span id="count">—</span></div><p class="fine">Last activity uses relay time, then advert reception. It is not a monitor verdict.</p><div id="nodes" aria-live="polite">Loading nodes…</div><p id="list-note" class="fine"></p></aside>
+ <div class="evidence"><section id="overview"><div class="sectionhead"><div><p class="eyebrow">01 / OBSERVED CONNECTIONS</p><h2>The mesh, as heard</h2></div><span id="link-count"></span></div><MapFrame label="Observed mesh topology" caption="Schematic, not geography or RF coverage. Lines are undirected observations in the selected lookback. Outside endpoints retain their identity."><div id="network"></div></MapFrame><p id="link-status" class="fine"></p><details><summary>Inspect connection evidence</summary><DataTable caption="Observed undirected links" columns={[{label:'Endpoints'},{label:'Packets observed',numeric:true},{label:'Days'},{label:'Last seen · UTC'}]}><tr><td colspan="4" id="link-loading">Loading…</td></tr></DataTable></details></section>
+ <section id="detail" hidden><div class="sectionhead"><div><p class="eyebrow">02 / NODE EVIDENCE</p><h2 id="node-title"></h2></div><Button id="close-detail" variant="ghost" size="sm">Back to network ↑</Button></div><div id="identity"></div><div id="connections"></div><div class="analysis-tools"><label>Measurement<select id="metric"><option value="batteryPercent">Battery · %</option><option value="temperatureC">Temperature · °C</option><option value="lastSnrDb">Admin signal / noise · dB</option><option value="packetsReceived">Received packets · per second</option></select></label><label>Compare with<select id="compare"><option value="">No comparison</option></select></label></div><p id="window-label" class="fine"></p><div id="archive-status" role="status"></div><TimeSeriesChart id="telemetry-chart" label="Sampled node telemetry" series={[]} /><div id="archive-notes"></div><details id="revisions"><summary>Revision ledger <span id="revision-count"></span></summary><p class="fine">Stored event snapshots, not telemetry samples or radio activity. Times below are upstream observation times. Bounds are [from, to).</p><div id="history-status"></div><DataTable caption="Event revision ledger" columns={[{label:'Observed · UTC'},{label:'Node'},{label:'Revision'},{label:'Monitor verdict'}]}><tr><td colspan="4">Select a node.</td></tr></DataTable></details></section>
+ <section class="reading-note"><p class="eyebrow">READING THIS DESK</p><h2>Silence is a question, not an answer.</h2><p>A missing sample can mean a collection gap. An unmonitored node can still relay traffic. These observations describe what SIERRA heard, within a bounded window; they do not establish network coverage or availability.</p></section></div></div>
+ </main><footer><strong>S.I.E.R.R.A / GRID</strong><span>Public observations · Read-only investigation · All times UTC</span></footer>
+ <script>import '../lib/explorer';</script>
 </BaseLayout>

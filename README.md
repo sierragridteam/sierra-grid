@@ -1,16 +1,18 @@
 # Sierra Grid
 
 Standalone SIERRA data exploration, intended for `https://grid.sierragridteam.org`.
-The project is currently comparing three independent implementations before choosing
-and combining their strongest features. This main-branch foundation is deliberately
-minimal; it does not choose a layout or information architecture for the entrants.
+Candidate C: the Mesh Evidence Desk. Follow observed connections, compare sampled
+telemetry and inspect bounded event revisions without conflating missing evidence
+with network health. See [the review report](BAKEOFF_REPORT.md) for workflows,
+limitations and reproducible review states.
 
 Use Node 26.13.0 and pnpm 12.18.0:
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm dev
+pnpm dev --port 8185
 make verify
+pnpm test:browser
 ```
 
 The default development port is 8182. Preview branches use separate ports.
