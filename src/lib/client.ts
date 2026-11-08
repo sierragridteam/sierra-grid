@@ -1,17 +1,10 @@
 import { createSierraClient } from '@sierragridteam/sdk';
-import { createFixtureFetch, FIXTURE_NOW } from '@sierragridteam/sdk/fixtures';
-import { readExplorerMode } from './mode';
 
-/** Call in the browser with location.search; never fetch production data at build time. */
-export function createExplorerContext(search: string) {
-  const { mode, scenario } = readExplorerMode(search);
+export const GRID_API_ORIGIN = 'https://data.sierragridteam.org';
+/** Read-only live data only. Query strings cannot switch the transport to fixtures. */
+export function createExplorerContext(_search?: string) {
   return {
-    mode,
-    scenario,
-    now: mode === 'demo' ? new Date(FIXTURE_NOW) : new Date(),
-    client: createSierraClient({
-      timeoutMs: 12_000,
-      ...(mode === 'demo' ? { fetch: createFixtureFetch({ scenario }) } : {}),
-    }),
+    now: new Date(),
+    client: createSierraClient({ baseUrl: GRID_API_ORIGIN, timeoutMs: 20_000 }),
   };
 }

@@ -1,136 +1,122 @@
-# SIERRA Grid: common competition brief
+# Sierra Grid — live data storytelling competition
 
-You are one of three agents in a clean-room competition. Your implementation will
-be run, tested and compared with the others. Aim to build the most useful, coherent
-and compelling explorer for advanced SIERRA members. No competitor sees another's
-work. All receive this same brief, starting commit, SDK, design system and fixtures.
-Work only in the branch/worktree assigned in your task. Do not inspect other
-competitors' directories, branches, PRs, screenshots, notes or agent messages.
+You are one of three agents in a clean-room design competition. Build an original
+product concept, not a conventional dashboard assembled from familiar widgets.
+Work only in your assigned worktree/branch. Do not inspect other entrants or previous
+rounds: no candidate branches, PRs, screenshots, private evaluation notes or code.
+All entrants receive this identical brief, inventory, package versions and starter.
 
-## Product
+## The experience
 
-Sierra Data aggregates public observations across Calaveras and nearby areas. Its
-embedded website mixes data exploration with API documentation. **Grid is a new,
-standalone exploration product**, intended for grid.sierragridteam.org. It must
-feel like a SIERRA property, using sierra-ds, while serving technically advanced,
-deeply interested people. Jay and other members especially want rich mesh data
-exploration. The main SIERRA website continues serving a simpler public subset.
+Build Sierra Grid, a standalone website for exploring and understanding everything
+SIERRA observes across Calaveras and the surrounding region. Its eventual home is
+`grid.sierragridteam.org`.
 
-Help people answer questions, follow changes, compare observations and spot patterns.
-Choose your own information architecture, visual composition and investigation
-workflow. A wall of status cards, raw JSON or API endpoint explanations is not the
-product. Prioritize a small number of connected, working investigative experiences
-rather than a large inventory of disconnected screens. Make the mesh experience
-substantial, and connect it to other relevant data where that adds real value.
+Make the data tell a story about this place: what is happening, what has changed,
+how observations connect, and what deserves closer attention. Visitors should
+discover interesting things before they know what to search for. From those
+discoveries, they should be able to follow their curiosity all the way down to
+individual observations, measurements, history and provenance.
 
-## Equal shared foundations
+It should feel like exploring a living place—not reading a spreadsheet, navigating
+a database, or studying an API. Tables and maps can support the experience, but
+must not determine its structure. Choose your own organizing concept, navigation,
+visual hierarchy and interactions. No prescribed homepage layout, node list, map,
+cards or dashboard structure. Aim for a distinctive, compelling experience.
 
-- Astro, TypeScript, pnpm and the exact committed dependency lockfile.
-- `@sierragridteam/sdk`: generated TypeScript/Zod client. All data API requests go
-  through it. Read its README and source package exports before assuming fields.
-- `@sierragridteam/design-system`: shared typography, tokens, logos, controls,
-  data tables/status, map primitives and the new updateable time-series chart.
-- `src/lib/client.ts` provides `createExplorerContext(location.search)`, returning
-  `{client, mode, scenario, now}`. Default is **live**. `?mode=demo` explicitly uses
-  synthetic data with a fixed reference clock. Never pass fake data off as live.
-- Demo scenarios: `normal`, `empty`, `stale`, `partial`, `unavailable`. Preserve
-  `mode` and `scenario` across navigation. These affect the SDK transport rather
-  than just changing a banner. Reviewers will exercise every one.
-- SDK fixtures use six synthetic mesh nodes with contrasting records: real zero
-  versus unknown, a collection gap, a reboot, an unmonitored node, truncation, and
-  an out-of-region endpoint. Use the API's returned coverage/completeness metadata.
+Serve deeply curious, technically capable people without requiring knowledge of our
+storage schema. Provide compelling entry points and deep exploration. A story must
+lead somewhere: users should be able to inspect its evidence and pursue a question.
 
-The starter deliberately provides no navigation, page layout or dashboard design.
-Shared libraries are frozen during competition: do not edit/fork/vendor them or
-install a different version to gain an advantage. Report a blocker to the root agent
-so any necessary shared fix can be given to all entrants. Record optional reusable
-component requests in `BAKEOFF_REPORT.md`; keep new generic DS needs visible.
+## Scope: every kind of data
 
-## Data semantics that must hold
+Explore the full breadth of data stored by sierra-data. Mesh is one part of that
+world, not the organizing principle for the entire site. Read DATA_INVENTORY.md,
+the SDK contract and real API responses before designing. Inventory every data
+category, meaningful field, relationship and historical depth. Identify stored data
+not exposed by the public API; report those gaps rather than inventing access.
 
-- Mesh links are **observed** undirected connections, not proof of RF range or
-  complete network topology. Preserve endpoint identity even outside a place filter.
-- Mesh liveness comes from `lastRelayedAt`, then `lastHeardAt`; event `observedAt`
-  is not a reliable last-heard clock. State which window a conclusion covers.
-- Event revisions are snapshots, not periodic telemetry samples. Use the telemetry
-  endpoint for node time series. Counter resets/reboots cannot become negative
-  throughput; nulls and unsampled gaps cannot become zero or a continuous line.
-- Archive/telemetry requests need explicit bounded windows. History has half-open
-  `[from,to)` bounds; some history filters refer to current event/place attachments.
-- Continue pagination using `nextPageToken`, not page length. A capped/truncated or
-  partially fetched result must never imply complete history or a definitive total.
-- Keep unavailable, empty, stale, partial and healthy states distinct. An API failure
-  must not produce an all-clear. Preserve source attribution and measurement times.
-- Keep directive life-safety text verbatim, AI text identified, and evacuation data
-  reference-only with its authoritative source link if you choose to show it.
-- Fixtures are synthetic test observations. Do not change their values/transport to
-  make your design look better. No private member data, credentials or paid API calls.
+Every publicly accessible datum should have a discoverable route into the
+experience. Use progressive disclosure so breadth does not overwhelm visitors.
+Technical detail belongs where it explains evidence, not in the primary navigation.
+A generic JSON viewer alone does not satisfy deep exploration. Explain quantities,
+units, time and provenance in context; structured raw detail may supplement that.
+No token non-mesh card attached to an otherwise mesh-only product.
 
-## Minimum working evidence
+## Real evidence only
 
-Deliver a runnable explorer with meaningful mesh investigation, node/history detail
-or comparison, useful filters/search and shareable URL state. Use the shared chart
-for temporal data and DS map/table/control primitives where appropriate. A user must
-be able to get from an overview to a concrete observation and back without losing
-context. Provide visible live/demo identification and a way to switch modes.
+**The live API origin is https://data.sierragridteam.org. Use it explicitly.**
+Use the published `@sierragridteam/sdk` for all data API requests. The shared
+`src/lib/client.ts` creates that live client. No localhost backend, fixture transport,
+demo mode, synthetic observations, fabricated trends, hardcoded observations, cached
+showcase datasets, or fallback-to-fake behavior. Fetch live data at runtime, not build
+time. Public camera imagery and official source links may use returned upstream URLs.
+Do not autoplay scanner streams or make paid/enrichment/write requests.
 
-Support desktop and narrow screens, keyboard access, legible labels/units and useful
-loading/error/retry states. Avoid horizontal page overflow. Charts must have an
-accessible alternative; maps cannot be the only way to select or understand data.
+Headlines, comparisons and conclusions must be supported by observations. Show
+relevant time, source and uncertainty. Distinguish missing data from zero, stale
+observations from current conditions, and correlation from causation. Sparse history,
+an unavailable feed or an empty category must remain understandable and explorable.
+Data telling a story means revealing evidence through thoughtful selection,
+sequencing and interaction—not inventing confident explanations. Do not call an LLM
+or invent narrative observations. Preserve source-provided AI labels and verbatim
+life-safety directives; evacuation information is reference-only with official links.
 
-Run `make verify` and add browser tests for the core investigative workflow, URL
-restoration, empty/failed/partial data and a narrow viewport. Browser testing must
-exercise interactions rather than merely assert that the homepage loaded. You may
-use Playwright already provided by the starter. Keep tests deterministic using the
-shared SDK fixture transport. Read-only live smoke checks are useful but must not
-become flaky CI dependencies.
+## Shared foundations and correct semantics
 
-Include `BAKEOFF_REPORT.md` with:
-- the central investigation workflow and your three strongest implemented features;
-- test commands/results and exact useful review URLs (including selected state);
-- known limitations, supported API boundaries, and intentional tradeoffs;
-- reusable DS/SDK additions to consider after the competition;
-- screenshots in `artifacts/` of desktop, narrow, one detail/analysis state, and a
-  partial/unavailable state. No fabricated success claims.
+Use pnpm 12.18.0, Node 26.13.0+, Astro, TypeScript and the committed lockfile.
+Use `@sierragridteam/design-system` for typography, tokens, logos, controls, maps,
+tables and time-series charts. Read package exports and docs. Do not vendor or fork
+shared packages or privately upgrade dependencies. Report blocking SDK/DS needs to
+root so necessary fixes reach everyone; record optional shared needs in your report.
+Generic reusable components belong in DS in the eventual consolidation; product-
+specific story composition belongs in Grid. Do not copy existing website layouts.
 
-Commit your finished implementation on your assigned branch. Do not merge or deploy.
-The root agent will create review PRs, reproduce tests and compare the proposals.
+- Use endpoint-supported parameters only. Per-event revision history does not accept
+  date bounds; bounded global history does. Snapshots are not periodic measurements.
+- Measurement time (`reading.reportedAt`) and storage time (`receivedAt`) differ.
+  Derive measurement rates using the measurement clock and declared reboot/cadence
+  metadata; preserve nulls, resets and gaps. Avoid unsafe int64 numeric conversion.
+- Follow continuation tokens, not page length. Bound request volume; retain earlier
+  successful pages on later failure and keep completeness visible through navigation.
+- Never turn unavailable, empty, stale, unmonitored or truncated into an all-clear.
+  Keep authoritative source health separate from local retrieval age.
+- Observed mesh links are not RF coverage or complete topology. Current rolling links
+  are not historical topology. Radio activity is not event revision time.
+- Avoid eager full-history crawls, unlimited parallel fan-out or automatic polling.
+  Load detail on intent, share/cache bounded requests within a visit, expose truncation.
+- No credentials or private member information. Do not commit copied live API datasets.
 
-## Evaluation rubric (same for all entrants)
+## Working evidence and evaluation
 
-| Dimension | Weight |
+Support narrow and desktop screens, keyboard use, legible units/times, loading,
+retry and failed/partial states. Visualizations need accessible alternatives. Preserve
+useful exploration context in URLs and back navigation. No production deployment.
+
+Run `make verify`. Add browser tests that exercise actual discovery-to-evidence
+interactions and URL restoration, not just page loading. Live tests use real API data,
+assert structural behavior rather than fixed counts/headlines and report time/availability.
+Separate them from deterministic CI so live outages are not mistaken for code failures.
+Fault injection may block a request to test honest failures but must not fabricate
+observations. Pure helper tests need not access the network. No synthetic dataset
+or test transport may appear in the application. Include axe WCAG 2/2.1 A/AA tags,
+including `wcag21a`, and narrow layout/keyboard checks.
+
+Deliver BAKEOFF_REPORT.md explaining your organizing concept and strongest features,
+what works, tests/results, reproducible review URLs, and honest limitations. Include
+COVERAGE.md mapping each public category and meaningful field group to a user route,
+with unexposed/missing data clearly marked. Include real runtime screenshots in
+artifacts/ (desktop, narrow, deep exploration); never fabricate populated states.
+Commit on your assigned branch; do not merge/deploy. Root compares all three.
+
+| Evaluation dimension | Weight |
 | --- | ---: |
-| Investigative usefulness and discovery of patterns | 25 |
-| Mesh and historical exploration supported by real data | 25 |
-| Interaction clarity, navigation and accessibility | 15 |
-| Honest treatment of freshness, missing/failed/partial data | 15 |
-| Visual coherence with SIERRA and responsive layout | 10 |
-| Maintainability, SDK/DS reuse and test coverage | 10 |
+| Breadth and discoverability of available data | 25 |
+| Originality and coherence of the organizing concept | 20 |
+| Evidence-backed storytelling and depth of exploration | 25 |
+| Time, provenance, uncertainty and completeness | 10 |
+| Visual craft, accessibility and responsiveness | 15 |
+| Technical quality and shared-library reuse | 5 |
 
-Reviewers will distinguish working capabilities from aspirations and choose the best
-ideas across implementations. This is not a speed contest; finish a coherent product
-and substantiate its behavior with tests. Do not ask for details from other entrants.
-
-## Chart usage reference
-
-```astro
----
-import TimeSeriesChart from '@sierragridteam/design-system/components/TimeSeriesChart.astro';
----
-<TimeSeriesChart id="signal-chart" label="Signal history" unit="dB" series={[]} />
-<script>
-  import type { TimeSeriesChartElement } from '@sierragridteam/design-system/lib/time-series';
-  await customElements.whenDefined('sierra-time-series');
-  const chart = document.querySelector<TimeSeriesChartElement>('#signal-chart')!;
-  chart.series = [{ id: 'snr', label: 'SNR', points: [
-    { time: Date.UTC(2026, 10, 7, 8), value: 0 },
-    { time: Date.UTC(2026, 10, 7, 9), value: null },
-  ] }];
-  // Set a justified gap threshold from sampling cadence, not guesswork.
-  chart.options = { ...chart.options, maxGapMs: 60 * 60 * 1000 };
-</script>
-```
-
-Charts share one unit per axis, use UTC, and preserve an accessible data table.
-Four line/color styles repeat; use small multiples or selection for more series.
-The component does not aggregate, smooth, infer availability or compute deltas.
+Coverage without a compelling experience is not enough. A beautiful concept that
+hides most of the data is not enough. Evaluate working behavior, not promised features.
