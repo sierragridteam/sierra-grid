@@ -1,11 +1,13 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Logo from '@sierragridteam/design-system/components/Logo.astro';
+import Button from '@sierragridteam/design-system/components/Button.astro';
+import '../styles/fieldbook.css';
 ---
-<BaseLayout title="Explorer foundation">
-  <main style="max-width: 70rem; margin: auto; padding: 2rem;">
-    <Logo siteName="Grid" />
-    <h1>Grid explorer foundation</h1>
-    <p>This is the shared starting point for the independent explorer bakeoff.</p>
-  </main>
+<BaseLayout title="Three tenses" description="Read the region through live observations, forecasts and the evidence behind them.">
+<a class="skip" href="#reading">Skip to reading</a>
+<header><Logo siteName="Grid" height={32}/><span class="edition">THE REGION, IN THREE TENSES <span>Live edition / California</span></span><Button href="?chapter=sources" variant="outline" size="sm">Source notes ↗</Button></header>
+<div class="book"><aside><p class="eyebrow">TIME IS A LENS</p><a class="book-title" href="/">Now.<br/>Ahead.<br/>Recorded.</a><nav aria-label="Explore time" id="chapters"></nav><div class="scope"><label for="place">Reading area</label><select id="place"><option value="">Whole collection</option></select><p>Coverage varies by source. A place filter is not a complete local risk assessment.</p></div><p class="margin-note">A forecast is a possibility.<br/>A revision is a record.<br/>Neither is a replay.</p></aside><main id="reading" tabindex="-1"><div id="content" aria-live="polite"><p>Reading the region’s clocks…</p></div></main></div>
+<footer><span>S.I.E.R.R.A / Community observations</span><span>Reference only. Follow official instructions.</span><a href="?chapter=sources">How this book knows what it knows →</a></footer>
+<script>import '../lib/fieldbook';</script>
 </BaseLayout>
