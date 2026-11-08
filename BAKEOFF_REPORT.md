@@ -66,3 +66,7 @@ The structured detail layer exposes all returned fields, while tailored panels e
 ## Independent-review coverage correction
 
 Forecast discovery now includes forecast locations absent from `weather[]`. Those choices explicitly say no current weather was returned, show only the actual forecast issuance/source/horizon, and open the existing full forecast detail. `make verify` passed again, and a targeted real-API browser test verified that every returned forecast location has exactly one discovery route. The test checks the missing-current label if that situation occurs in the live response; no synthetic response was introduced to force it.
+
+Coordinator scope-label correction: requesting Regional context from the all-place
+lens now explicitly states that no all-place summary endpoint exists and that the
+displayed fallback describes Ebbetts Pass only.
