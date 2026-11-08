@@ -5,7 +5,7 @@ All routes use runtime SDK 0.1.1 GET requests to `https://data.sierragridteam.or
 | Public category | Entry and depth | Meaningful fields available |
 | --- | --- | --- |
 | Current weather | `?view=weather`, select a location | Condition/description, temperature and feels-like °C, humidity %, wind km/h and direction, visibility km, icon identifier, location ID/name, aggregate refresh time. |
-| Hourly forecasts | `?view=weather&location=arnold` | Source/grid, issuance, horizon, peak gust/time, minimum humidity; five selectable DS chart quantities and accessible period tables. Full periods in structured disclosure. Metric and location are URL state. |
+| Hourly forecasts | `?view=weather&location=arnold` | Source/grid, issuance, horizon, peak gust/time, minimum humidity; five selectable DS chart quantities and accessible period tables. Full periods in structured disclosure. Metric and location are URL state. Forecast-only locations remain discoverable with an explicit missing-current-weather label. |
 | Issued fire weather | Weather footer and `?view=fire_weather` | Region-wide issued state/headline/zones, separate from forecast; map metadata and every feature/property/geometry. |
 | Wildfires | `?view=WILDFIRE` → observation | Acres, containment with zero/unknown caveat, county, cause, perimeter flag and geometry; all source-specific records remain separate. |
 | Evacuations | `?view=EVACUATION` → observation | Zone ID, level, county/type, source instructions, geometry, lifecycle/effective times; Genasys reference link. |

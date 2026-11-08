@@ -62,3 +62,7 @@ Fresh direct links to historical revisions use a bounded 200-revision lookup. Ol
 Current conditions/forecasts/cameras have no public historical archive. Raw mesh receptions/path traces, daily topology buckets, burn staging diagnostics and private relay operations are unavailable. Some event categories are currently empty; their ended records and bounded histories remain reachable. See coverage for precise distinctions.
 
 The structured detail layer exposes all returned fields, while tailored panels explain primary domain facts. It is intentionally less bespoke for rare secondary fields. There is no side-by-side revision diff, forecast-vintage archive or inferred counter-rate analysis. Camera HLS and scanner listening are provider links, not embedded players; remote imagery can fail independently of directory health. Address resolution and every external media provider were not exhaustively browser-tested. The screenshot evidence does not claim they were.
+
+## Independent-review coverage correction
+
+Forecast discovery now includes forecast locations absent from `weather[]`. Those choices explicitly say no current weather was returned, show only the actual forecast issuance/source/horizon, and open the existing full forecast detail. `make verify` passed again, and a targeted real-API browser test verified that every returned forecast location has exactly one discovery route. The test checks the missing-current label if that situation occurs in the live response; no synthetic response was introduced to force it.

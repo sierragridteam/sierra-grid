@@ -102,3 +102,16 @@ test('stored enhancement I/O is explicitly requested on intent', async ({ page }
     await expect(page.locator('#content')).toContainText('Stored I/O requested explicitly.');
     await expect(page).toHaveURL(/io=1/);
 });
+test('every live forecast location has a discovery route even without current weather', async ({page}) => {
+    const response = page.waitForResponse(r => r.url().includes('/api/v1/conditions') && r.status() === 200);
+    await page.goto('/?view=weather');
+    const data = await (await response).json();
+    await expect(page.locator('.weather-choice').first()).toBeVisible();
+    for (const forecast of data.forecast) {
+        const directChoice = page.locator(`.weather-choice[href*="location=${encodeURIComponent(forecast.locationId)}"]`);
+        await expect(directChoice).toHaveCount(1);
+        if (!data.weather.some((reading: {locationId: string}) => reading.locationId === forecast.locationId)) {
+            await expect(directChoice).toContainText('No current weather was returned');
+        }
+    }
+});
