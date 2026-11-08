@@ -179,11 +179,11 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@sierragridteam/design-system':
-        specifier: ^0.5.0
-        version: 0.5.0(astro@7.4.7(@types/node@26.6.6)(yaml@2.9.1))(maplibre-gl@6.17.0)
+        specifier: ^0.5.1
+        version: 0.5.1(astro@7.4.7(@types/node@26.6.6)(yaml@2.9.1))(maplibre-gl@6.17.0)
       '@sierragridteam/sdk':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.1.1
+        version: 0.1.1
       astro:
         specifier: ^7.4.7
         version: 7.4.7(@types/node@26.6.6)(yaml@2.9.1)
@@ -924,8 +924,8 @@ packages:
   '@shikijs/vscode-textmate@10.1.0':
     resolution: {integrity: sha512-cVBuhDQjBZaNMTwBquYfPydrUP+E3hE6oYGasx8h6ZrODIM7/r+gxLDXdd66oszbrggZHEntdE6j+5gYIVyMWQ==}
 
-  '@sierragridteam/design-system@0.5.0':
-    resolution: {integrity: sha512-EH7/vqKCgaaGBxQgzn34lT5fzVcl4mzSS8TjWYDvG0OdXc9UMXGZJmkm5n8VpH6P6dIpmc7IPgQKe9RzLnWjAw==}
+  '@sierragridteam/design-system@0.5.1':
+    resolution: {integrity: sha512-HEkVphDor/e4lZXjxHfio7Upm2bjr0/gWSCHGcBmaCcD6pr7Pm2usJGpiA7bsUJ92D2eeQgmJ+X61iaqedUTDw==}
     peerDependencies:
       astro: ^7.4.7
       maplibre-gl: ^6.17.0
@@ -933,8 +933,8 @@ packages:
       maplibre-gl:
         optional: true
 
-  '@sierragridteam/sdk@0.1.0':
-    resolution: {integrity: sha512-08daB7tL+Wnyhbxk5MVpprwHN7uHDnQy2N/puLeCfpsCxRQQzGhSyWUVd99RYB0UnOOljIW6Dar9rsLjZN5UwA==}
+  '@sierragridteam/sdk@0.1.1':
+    resolution: {integrity: sha512-bFcx6VakDxxQ8Xv0lDI+cTPCYEgfrpmreStFPynIKIi6ZK1F3V6dyMxts4dbNElcsJDb71SGe6/Uw6uqtlyYSQ==}
     engines: {node: '>=22'}
 
   '@tybys/wasm-util@0.10.4':
@@ -2591,14 +2591,14 @@ snapshots:
 
   '@shikijs/vscode-textmate@10.1.0': {}
 
-  '@sierragridteam/design-system@0.5.0(astro@7.4.7(@types/node@26.6.6)(yaml@2.9.1))(maplibre-gl@6.17.0)':
+  '@sierragridteam/design-system@0.5.1(astro@7.4.7(@types/node@26.6.6)(yaml@2.9.1))(maplibre-gl@6.17.0)':
     dependencies:
       '@types/geojson': 7946.0.16
       astro: 7.4.7(@types/node@26.6.6)(yaml@2.9.1)
     optionalDependencies:
       maplibre-gl: 6.17.0
 
-  '@sierragridteam/sdk@0.1.0':
+  '@sierragridteam/sdk@0.1.1':
     dependencies:
       zod: 4.6.7
 
