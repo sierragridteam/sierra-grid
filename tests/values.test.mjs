@@ -15,3 +15,9 @@ test('measurement and storage clocks have different labels', () => {
   assert.notEqual(fieldLabel('receivedAt'), fieldLabel('reportedAt'));
   assert.match(fieldLabel('windSpeedKmh'), /km\/h/);
 });
+test('attribute escaping preserves hostile query values without creating attributes', () => {
+  const input = '" onfocus="run()\' & <svg>';
+  assert.equal(escapeHtml(input), '&quot; onfocus=&quot;run()&#39; &amp; &lt;svg&gt;');
+  const query = new URLSearchParams({ payload: input, topic: 'weather' }).toString();
+  assert.equal(escapeHtml('?' + query), '?' + query.replaceAll('&', '&amp;'));
+});

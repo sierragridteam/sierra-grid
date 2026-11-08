@@ -48,3 +48,7 @@ Runtime screenshots: `artifacts/desktop.png`, `narrow.png`, `deep.png`, `ahead.p
 - Source health displays the server-reported state and its timing/policy fields; the UI does not independently reclassify an old server response. A fresh browser retrieval is not represented as fresh upstream evidence.
 - Live outages and availability can change test outcomes; an empty public category does not prove absence on the ground. Tests conditionally exercise an event detail only when real rows exist, and do not fabricate rows to make a test pass.
 - Address resolution UI is implemented but not exercised with a real personal address. No paid, write, enrichment or deployment actions were run.
+
+## Query-safety follow-up
+
+PR CodeQL analysis identified query-to-HTML paths through generated navigation URLs. All dynamic link and date-input attributes now explicitly use HTML escaping at the interpolation boundary, in addition to URLSearchParams serialization and date validation. The change does not alter navigation state or dependencies. Two browser regressions send hostile quote/tag/entity payloads through internal navigation, back navigation, visible query text and invalid date errors with API requests blocked, never fabricated. `make verify` passed with five deterministic tests; both targeted query-safety browser tests passed. Remote CodeQL must rerun after the fix is pushed.
