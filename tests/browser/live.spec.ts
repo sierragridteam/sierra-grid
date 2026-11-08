@@ -115,3 +115,30 @@ test('every live forecast location has a discovery route even without current we
         }
     }
 });
+test('malicious date query values cannot create markup in archive or telemetry controls', async ({page}) => {
+    // Obtain a real public node for the telemetry route; no fabricated observation response.
+    await page.goto('/?place=&view=MESH');
+    await expect(page.locator('#complete')).toContainText('records read.');
+    await page.locator('.entry').first().click();
+    const telemetryLink = page.getByRole('link', {name: 'What did the monitor measure?'});
+    await expect(telemetryLink).toBeVisible();
+    const telemetryQuery = new URLSearchParams((await telemetryLink.getAttribute('href'))!);
+    const payload = '\" autofocus onfocus=\"window.__gridXss=1\"><img src=x onerror=\"window.__gridXss=1\">';
+    for (const view of ['ROAD_INCIDENT', 'telemetry']) {
+        for (const field of ['from', 'to']) {
+            const query = new URLSearchParams({view, archive: '1', place: '', from: new Date(Date.now() - 3600000).toISOString(), to: new Date().toISOString()});
+            if (view === 'telemetry') query.set('node', telemetryQuery.get('node')!);
+            query.set(field, payload);
+            await page.goto('/?' + query);
+            await expect(page.getByRole('alert')).toContainText('Choose valid date bounds');
+            await expect(page.locator('#content [autofocus], #content [onfocus], #content [onerror]')).toHaveCount(0);
+            expect(await page.evaluate(() => '__gridXss' in window)).toBe(false);
+        }
+    }
+    // Legitimate query values still populate the controls via their value properties.
+    const to = new Date();
+    const from = new Date(to.getTime() - 3600000);
+    await page.goto('/?' + new URLSearchParams({view: 'ROAD_INCIDENT', archive: '1', from: from.toISOString(), to: to.toISOString()}));
+    await expect(page.locator('#time-form input[name="from"]')).toHaveValue(from.toISOString().slice(0,16));
+    await expect(page.locator('#time-form input[name="to"]')).toHaveValue(to.toISOString().slice(0,16));
+});

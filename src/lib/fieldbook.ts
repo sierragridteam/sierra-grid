@@ -185,14 +185,28 @@ async function weather() {
     content.insertAdjacentHTML('beforeend', `<h2>Was a warning actually issued?</h2>${facts(d.fireWeather)}${next('Keep following the sky', [{ label: 'Issued weather products', v: 'WEATHER_ALERT' }, { label: 'Fire-weather features and source', v: 'fire_weather' }, { label: 'What is happening on the land?', v: 'land' }])}`);
 }
 function timeForm(defaultDays = 7) {
-    const end = params.get('to') || visitNow.toISOString();
-    const begin = params.get('from') || new Date(Date.parse(end) - defaultDays * 86400000).toISOString();
-    return { from: begin, to: end, html: `<form id="time-form" class="form-row"><label>From (UTC)<input name="from" type="datetime-local" value="${begin.slice(0, 16)}" required/></label><label>To (UTC, exclusive)<input name="to" type="datetime-local" value="${end.slice(0, 16)}" required/></label><button>Read this window</button></form>` };
+    const endTime = Date.parse(params.get('to') || visitNow.toISOString());
+    const beginTime = params.has('from')
+        ? Date.parse(params.get('from')!)
+        : endTime - defaultDays * 86400000;
+    if (!Number.isFinite(beginTime) || !Number.isFinite(endTime) || beginTime >= endTime) {
+        throw new RangeError('Choose valid date bounds with From earlier than To.');
+    }
+    // Query values never enter HTML. Populate the date controls through DOM properties.
+    return {
+        from: new Date(beginTime).toISOString(),
+        to: new Date(endTime).toISOString(),
+        html: '<form id="time-form" class="form-row"><label>From (UTC)<input name="from" type="datetime-local" required/></label><label>To (UTC, exclusive)<input name="to" type="datetime-local" required/></label><button>Read this window</button></form>',
+    };
 }
-function bindTime() {
-    document.querySelector('#time-form')?.addEventListener('submit', e => {
+function bindTime(bounds: {from: string; to: string}) {
+    const form = document.querySelector<HTMLFormElement>('#time-form');
+    if (!form) return;
+    form.querySelector<HTMLInputElement>('[name="from"]')!.value = bounds.from.slice(0, 16);
+    form.querySelector<HTMLInputElement>('[name="to"]')!.value = bounds.to.slice(0, 16);
+    form.addEventListener('submit', e => {
         e.preventDefault();
-        const f = new FormData(e.target as HTMLFormElement);
+        const f = new FormData(form);
         const p = new URLSearchParams(params);
         p.set('from', new Date(String(f.get('from')) + 'Z').toISOString());
         p.set('to', new Date(String(f.get('to')) + 'Z').toISOString());
@@ -246,7 +260,7 @@ async function events(layer: NonNullable<EventQuery['layer']>[number]) {
         }
     };
     more.addEventListener('click', load);
-    bindTime();
+    bindTime(window);
     if (saved) {
         complete.textContent = `${count} records restored. ${token ? 'Partial collection; more evidence remains.' : 'Query complete; no continuation token.'}`;
         more.hidden = !token;
@@ -461,7 +475,7 @@ async function telemetry() {
     };
     more.onclick = drawSamples;
     drawSamples();
-    bindTime();
+    bindTime(w);
 }
 function index() {
     content.innerHTML = breadcrumb() + heading('The complete collection', 'Every question has a way in.', 'Jump directly to any public collection. Nothing depends on completing a trail first.') + domains.map(d => `<section><h2>${d.name}</h2><div class="tabs">${d.views.map(v => link(titles[v], v)).join('')}</div></section>`).join('') + `<h2>Context & trust</h2><div class="tabs">${['places', 'summary', 'sources'].map(v => link(titles[v], v)).join('')}</div><details class="section"><summary>All thirteen geographic projections</summary><div class="tabs">${mapLayers.map(v => link(human(v), 'map', { layer: v })).join('')}</div></details>` + note('Not publicly exposed: historical weather/road-condition/camera archives, raw mesh receptions and packet paths, daily topology buckets, internal burn diagnostics and private relay operations. Reserved gauge, air-quality and announcement categories do not provide datasets here. Event collections offer bounded revision archives; radio records offer measurement archives where monitored.');
