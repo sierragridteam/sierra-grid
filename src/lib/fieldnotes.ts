@@ -331,6 +331,9 @@ async function render() {
         await loadEvents(col as PublicLayer, gen, true);
       }
       if (gen !== generation) return;
+      if (Number(state.get("pages") || 1) > 10 && pageToken) {
+        $("#evidence").insertAdjacentHTML("beforeend", '<p class="note">Automatic restoration stops after ten pages. Earlier depth remains in the URL; use Read the next page to continue explicitly.</p>');
+      }
       html = "";
     } else if (col.startsWith("map:")) {
       if (place() === "all")
@@ -523,7 +526,7 @@ async function loadEvents(layer: PublicLayer, gen: number, more = false) {
     );
     $("#evidence").insertAdjacentHTML(
       "beforeend",
-      `<div id="pagination"><p class="note">${pageToken ? "Partial reading — more records remain." : "End of this result set; no continuation token."} ${mode === "history" ? "Archive bounds are UTC, start inclusive/end exclusive. Current place attachments filter historical records." : ""}</p>${pageToken && eventPages < 10 ? button("Read the next page", "more") : pageToken ? "<p>Ten-page visit bound reached. Narrow your scope to continue.</p>" : ""}${link("Open the regional shelf →", { place: "all", item: null })}</div>`,
+      `<div id="pagination"><p class="note">${pageToken ? "Partial reading — more records remain." : "End of this result set; no continuation token."} ${mode === "history" ? "Archive bounds are UTC, start inclusive/end exclusive. Current place attachments filter historical records." : ""}</p>${pageToken ? button("Read the next page", "more") : ""}${link("Open the regional shelf →", { place: "all", item: null })}</div>`,
     );
   } catch (e) {
     if (gen !== generation) return;
@@ -787,7 +790,23 @@ document.addEventListener("click", (e) => {
     cache.clear();
     void render();
   }
-  if (action === "more") go({ pages: String(Math.min(10, eventPages + 1)) });
+  if (action === "more") {
+    const gen = generation;
+    const control = target.closest<HTMLButtonElement>("button")!;
+    control.disabled = true;
+    void loadEvents(collection() as PublicLayer, gen, true).then(() => {
+      if (gen !== generation) return;
+      state.set("pages", String(eventPages));
+      history.replaceState({}, "", url({ pages: String(eventPages) }));
+      document.querySelectorAll<HTMLAnchorElement>("#evidence a[data-nav]").forEach(anchor => {
+        const destination = new URL(anchor.href);
+        if (destination.searchParams.has("item")) {
+          destination.searchParams.set("pages", String(eventPages));
+          anchor.href = destination.href;
+        }
+      });
+    }).finally(() => { control.disabled = false; });
+  }
   if (action === "revisions") void revisions();
   if (action === "revision-more") void revisions(true);
   if (action === "revision-io") void revisions(false, true);

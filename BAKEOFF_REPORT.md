@@ -53,7 +53,8 @@ no dependency input changed.
 See `COVERAGE.md` for category/field mapping and unexposed data. Public observations
 remain live-only; requests are cached within a visit and local view time is labeled
 as such. Reload for fresh retrieval. Source health, observed time and fetched time
-remain distinct. Global collections have a ten-page visit bound; per-event history keeps explicit
+remain distinct. Automatic global-list restoration is bounded to ten pages with a visible notice;
+manual continuation stays available. Per-event history keeps explicit
 20-revision continuation available while a token remains. Nothing auto-crawls history;
 later-page failures retain earlier successful results. Loaded event page depth is
 URL state. No automatic polling or eager full-history crawl.
