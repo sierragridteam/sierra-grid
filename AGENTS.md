@@ -12,3 +12,5 @@ No credentials, private data, production writes or deployments. Use your assigne
 worktree/branch only; do not inspect any competing or previous implementations.
 Run `make verify` plus real-data browser interaction/accessibility checks. Record
 coverage, missing public access and limitations honestly. Do not merge a winner.
+
+Don't add `Co-Authored-By:` trailers naming an agent or model, or any other AI attribution (such as a "Generated with" footer), to commit messages or pull request descriptions. `.claude/settings.json` turns off Claude Code's default commit trailer; follow the same rule with any other tool.
