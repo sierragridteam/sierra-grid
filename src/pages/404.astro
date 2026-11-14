@@ -1,0 +1,37 @@
+---
+import ExplorerLayout from "../layouts/ExplorerLayout.astro";
+import { views } from "../config/views";
+
+// The same places as the sidebar, with what each one answers.
+const places: [id: string, label: string, about: string][] = [
+  ["discover", "Overview", "What is active in the corridor right now"],
+  ["roads", "Roads", "What is open or closed, chain controls and road work"],
+  ["weather", "Weather", "Alerts, the snow level and the forecast"],
+  ["WILDFIRE", "Wildfires", "Active fires and evacuations, and the season so far"],
+  ["POWER", "Power", "Outages and safety shutoffs"],
+  ["mesh", "Mesh", "The mesh network, the relay and its gateways"],
+  ["events", "Events", "Every report, with its source and history"],
+];
+const path = (id: string) => views.find((view) => view.id === id)!.path;
+---
+
+<ExplorerLayout view={{ id: "not-found", label: "Page not found", chart: false }} noindex>
+  <header class="page-header grid-hero">
+    <div class="page-header__text">
+      <span class="kicker">Page not found</span>
+      <h1>There is nothing at this address</h1>
+      <p class="grid-hero__more">
+        The page may have moved or been folded into another. Evacuations are now on Wildfires, and
+        past reports are on Events.
+      </p>
+    </div>
+  </header>
+  <ul class="not-found-places">
+    {places.map(([id, label, about]) => (
+      <li>
+        <a href={path(id)}>{label}</a>
+        <span class="meta">{about}</span>
+      </li>
+    ))}
+  </ul>
+</ExplorerLayout>

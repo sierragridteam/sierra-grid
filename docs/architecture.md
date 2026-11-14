@@ -22,6 +22,10 @@ on demand. `src/pages/[view].astro` and `index.astro` render the shell
 | `/mesh/` | `mesh` → `mesh-network` | Map, fleet dashboard, relay and gateways |
 | `/scanners/`, `/sources/`, `/cameras/` | their own | Directories and health |
 
+`src/pages/404.astro` is the not-found page: the same shell and sidebar, no
+view module (`data-view="not-found"` tells `page.ts` to mount nothing and leave
+the address as typed). The host must serve `404.html` for unknown paths.
+
 `/evacuations/` redirects to Wildfires (evacuations lead that page when in
 effect) and `/history/` to Events with past reports included.
 

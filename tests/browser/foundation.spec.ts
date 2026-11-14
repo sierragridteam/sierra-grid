@@ -314,6 +314,21 @@ test("source health answers first with an aligned table; scanner feeds are cards
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
+test("the 404 page keeps the shell and its address, and leads back to real pages", async ({ page }) => {
+  await page.goto("/404.html");
+  await expect(page.locator("#content")).toHaveAttribute("aria-busy", "false");
+  await expect(page.locator("#content h1")).toHaveText("There is nothing at this address");
+  // It is not rewritten to a real route, and no view loads into it.
+  expect(new URL(page.url()).pathname).toBe("/404.html");
+  await expect(page.locator(".grid-sidebar .nav-link.is-active")).toHaveCount(0);
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex");
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.locator(".not-found-places a", { hasText: "Roads" }).click();
+  await ready(page);
+  expect(new URL(page.url()).pathname).toBe("/roads/");
+  await expect(page.locator(".roads-answer")).toBeVisible();
+});
+
 test("camera transport failure leaves an explicit state and source links", async ({
   page,
 }) => {

@@ -5,10 +5,14 @@ import Icon from "@sierragridteam/design-system/components/Icon.astro";
 import LineChart from "@sierragridteam/design-system/components/LineChart.astro";
 import ThemeSwitcher from "@sierragridteam/design-system/components/ThemeSwitcher.astro";
 import { views, type View } from "../config/views";
+/** A page outside the views (the 404): the shell and sidebar, but no domain module mounts. */
+type StaticPage = { id: "not-found"; label: string; chart: false };
 interface Props {
-  view: View;
+  view: View | StaticPage;
+  /** Keep this page out of search results. */
+  noindex?: boolean;
 }
-const { view } = Astro.props;
+const { view, noindex = false } = Astro.props;
 const groups = [
   {
     label: "Explore",
@@ -37,7 +41,7 @@ const parent = view.id === "cameras" ? "roads"
   : view.id === "WEATHER_ALERT" ? "weather" : view.id === "EVACUATION" ? "WILDFIRE" : view.id;
 ---
 
-<BaseLayout title={view.label}>
+<BaseLayout title={view.label} noindex={noindex}>
   <a class="skip-link" href="#main">
     Skip to content
   </a>
