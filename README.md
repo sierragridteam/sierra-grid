@@ -32,6 +32,12 @@ There are no credentials and no demo data: every page reads the live public API,
 
 See [docs/architecture.md](docs/architecture.md) for how the pages are put together.
 
+## Deploy
+
+A push to `main` that passes the checks is built and published to grid.sierragridteam.org by `.github/workflows/deploy.yml`: an S3 bucket behind CloudFront, provisioned separately by the organization's infrastructure repository. There are no stored credentials. The job runs in the `production` environment (restricted to `main`) and exchanges its GitHub OIDC token for a role that can only sync this site's bucket and invalidate its distribution. Its target comes from four repository variables: `DEPLOY_ROLE_ARN`, `DEPLOY_AWS_REGION`, `DEPLOY_S3_BUCKET` and `DEPLOY_CLOUDFRONT_DISTRIBUTION_ID`.
+
+The workflow is the same file as sierra-website's apart from the checks workflow's name and the site URL; change the two together.
+
 ## Third parties at run time
 
 The browser talks to the Grid API, to `tiles.openfreemap.org` for the base map (OpenStreetMap data), and loads road camera stills from Caltrans. Scanner links open Broadcastify. Data comes from Caltrans, CHP, CAL FIRE, FIRIS, Cal OES, the National Weather Service, PG&E, county burn lines and the MeshCore community mesh; each page names its sources.
