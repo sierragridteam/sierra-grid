@@ -5,7 +5,10 @@
 .report-browser { display: grid; gap: var(--space-6); align-items: start; }
 .browser-results, .browser-selection { min-width: 0; }
 .browser-selection[hidden] { display: none; }
-.browser-count { margin: 0 0 var(--space-3); }
+/* The count line is always there, so Reset appears on it without moving anything. */
+.browser-count { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); min-height: 1.5rem; margin: 0 0 var(--space-3); font-size: var(--fs-small); }
+.browser-count p { margin: 0; min-width: 0; }
+.browser-count .filter-reset { flex: none; }
 .browser-day { padding-block: var(--space-4) var(--space-2); }
 .browser-empty { padding-block: var(--space-6); max-width: 42rem; }
 /* One rhythm for the selected report: header, summary, map, then ruled sections. */

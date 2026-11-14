@@ -34,9 +34,11 @@ export async function mount(ctx: Context) {
   const title = viewFor(state.topic).label;
   const destination = (historical: boolean) => stateUrl({ ...state, ...defaults(state.topic), mode: historical ? "history" : "now", record: "", revision: "", timeExplicit: false, browserPages: 1 });
   const patch = (updates: Partial<typeof state>) => void navigate(stateUrl({ ...state, ...updates, record: "", revision: "", browserPages: 1, autoSelect: true }));
-  // Filter buttons: no label above; the name is announced, and shown inline once the choice is not the default.
-  const choice = (id: string, label: string, items: readonly (readonly string[])[], value: string, fallback: string, field: "layer" | "eventStatus" | "severity", prefix = false) => html`<sierra-select .props=${{ id, value, variant: "filter", label, applied: value !== fallback, prefix: prefix && value !== fallback ? label : undefined, options: items.map(([value, label]) => ({ value, label })) } satisfies SelectProps} @change=${(event: Event) => patch({ [field]: (event.currentTarget as { value?: string }).value })}></sierra-select>`;
-  const types = eventTypes.map(([id, label]) => [id, id === "ALL" ? "Any type" : label] as const);
+  // Filter buttons: no label above; the filter's name is announced. The bar gives them equal
+  // columns, so the trigger shows an option's short text where the full one would not fit.
+  type Item = readonly [value: string, label: string, short?: string];
+  const choice = (id: string, label: string, items: readonly Item[], value: string, fallback: string, field: "layer" | "eventStatus" | "severity") => html`<sierra-select .props=${{ id, value, variant: "filter", label, applied: value !== fallback, options: items.map(([value, label, short]) => ({ value, label, short })) } satisfies SelectProps} @change=${(event: Event) => patch({ [field]: (event.currentTarget as { value?: string }).value })}></sierra-select>`;
+  const types: Item[] = eventTypes.map(([id, label]) => [id, id === "ALL" ? "Any type" : label, id === "WEATHER_ALERT" ? "Weather" : undefined]);
   const filtered = allTypes && layer !== "ALL" || !archive && ((state.eventStatus || "current") !== "current" || !!state.severity);
   const reset = () => void navigate(stateUrl({ ...state, ...(allTypes ? { layer: "ALL" } : {}), eventStatus: "current", severity: "", query: "", record: "", revision: "", browserPages: 1, autoSelect: true }));
   let urlTimer = 0;
@@ -59,12 +61,11 @@ export async function mount(ctx: Context) {
         <form class="browser-filters" aria-label="Search and filter reports" @submit=${(event: Event) => event.preventDefault()}>
           ${searchField({ id: "browser-search", label: "Search reports", value: s.query, placeholder: "Search events, places, sources…", shortcut: "/", onInput: search })}
           <div class="filter-bar">
-            ${allTypes ? choice("browser-type", "Type", types, layer, "ALL", "layer", true) : nothing}
-            ${!archive ? html`${choice("browser-status", "Status", [["current", "Active & scheduled"], ["ACTIVE", "Active"], ["SCHEDULED", "Scheduled"], ["all", "All statuses"], ["RESOLVED", "Resolved"], ["EXPIRED", "Expired"]], state.eventStatus || "current", "current", "eventStatus")}${choice("browser-severity", "Importance", [["", "Any importance"], ["MODERATE", "Moderate or higher"], ["SEVERE", "Severe or higher"], ["EXTREME", "Extreme"]], state.severity || "", "", "severity")}` : nothing}
-            ${filtered || q ? html`<button type="button" class="filter-bar__reset" @click=${reset}>Reset</button>` : nothing}
+            ${allTypes ? choice("browser-type", "Type", types, layer, "ALL", "layer") : nothing}
+            ${!archive ? html`${choice("browser-status", "Status", [["current", "Active & scheduled", "Current"], ["ACTIVE", "Active"], ["SCHEDULED", "Scheduled"], ["all", "All statuses"], ["RESOLVED", "Resolved"], ["EXPIRED", "Expired"]], state.eventStatus || "current", "current", "eventStatus")}${choice("browser-severity", "Importance", [["", "Any importance", "Any level"], ["MODERATE", "Moderate or higher", "Moderate +"], ["SEVERE", "Severe or higher", "Severe +"], ["EXTREME", "Extreme"]], state.severity || "", "", "severity")}` : nothing}
           </div>
         </form>
-        <h2 class="sr-only">${archive ? "Saved updates" : "Reports"}</h2><p id="browser-count" class="meta browser-count" role="status">${s.loading ? "Loading reports…" : s.error ? "Reports unavailable" : q ? `${shown.length} of ${s.entries.length} ${s.token ? "loaded " : ""}${noun} match${shown.length === 1 && !archive ? "es" : ""}${s.token ? " · load more to search the rest" : ""}` : `${s.entries.length} ${noun}${s.token ? " loaded · more available" : ""} · ${archive ? "newest reported first" : "newest received first"}`}</p>
+        <h2 class="sr-only">${archive ? "Saved updates" : "Reports"}</h2><div class="browser-count"><p id="browser-count" class="meta" role="status">${s.loading ? "Loading reports…" : s.error ? "Reports unavailable" : q ? `${shown.length} of ${s.entries.length} ${s.token ? "loaded " : ""}${noun} match${shown.length === 1 && !archive ? "es" : ""}${s.token ? " · load more to search the rest" : ""}` : `${s.entries.length} ${noun}${s.token ? " loaded · more available" : ""} · ${archive ? "newest reported first" : "newest received first"}`}</p>${filtered || q ? html`<button type="button" class="filter-reset" @click=${reset}>Reset</button>` : nothing}</div>
         <div id="browser-list" class="feed">${repeat(shown, key, (entry, index) => html`
           ${archive && (index === 0 || day(entry) !== day(shown[index - 1])) ? html`<h3 class="browser-day">${day(entry)}</h3>` : nothing}
           ${feedItem({ ...reportFeedProps(entry.report, reportLink(ctx, entry.report, entry.revision), entry.revision), selected: entry.report.id === s.record && (!s.revision || String(entry.revision?.revision) === s.revision), onSelect: () => select({ record: entry.report.id, revision: entry.revision ? String(entry.revision.revision) : "", selection: "auto" }) })}
