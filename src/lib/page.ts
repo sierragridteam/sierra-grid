@@ -22,6 +22,13 @@ export function mountExplorer() {
   definePage(() => true, run);
 }
 async function run({ root: next, signal }: PageContext) {
+  // The 404 page is static: it has the shell (so the drawer works) but no view to mount,
+  // and its address must stay as typed rather than be normalised to a real route.
+  if (next.dataset.view === "not-found") {
+    installDrawer(signal);
+    next.querySelector("#content")?.setAttribute("aria-busy", "false");
+    return;
+  }
   const referenceNow = Date.now();
   let state = parseState(new URL(location.href));
   // Legacy B links remain usable, but all newly shared links use real route paths.

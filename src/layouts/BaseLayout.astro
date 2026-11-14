@@ -16,10 +16,12 @@ import IconSprite from "@sierragridteam/design-system/components/IconSprite.astr
 interface Props {
   title: string;
   description?: string;
+  noindex?: boolean;
 }
 const {
   title,
   description = "Roads, weather, wildfires, power and the SIERRA mesh network for the Ebbetts Pass corridor, from public sources.",
+  noindex = false,
 } = Astro.props;
 ---
 
@@ -30,6 +32,7 @@ const {
     <meta name="viewport" content="width=device-width" />
     <title>{title} · S.I.E.R.R.A Grid</title>
     <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
     <ThemeScript />
     <ClientRouter />
   </head>
