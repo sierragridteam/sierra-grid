@@ -105,6 +105,10 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     const originalCard = block("Original report", html`${original
       ? long ? html`<p class="report-quote report-quote--long">${original.slice(0, 280).trimEnd()}…</p>${raw("Show full report")}` : html`<p class="report-quote">${original}</p>`
       : html`<p class="meta">The source supplied no narrative.</p>`}${fullOriginal ? html`<details class="report-original"><summary>Call transcript</summary><p class="report-quote report-quote--long">${fullOriginal}</p></details>` : nothing}<p class="meta">${linkedSource} · first saved by Grid ${fmt(savedFirst)} · ${versionsLink}</p>`);
+    // The summary is the body of most reports (few carry much else), so it sits in a card in
+    // the main column under the map rather than loose above it.
+    const summaryCard = report.summary ? block("Summary", html`<p class="report-summary">${report.summary}</p>`) : nothing;
+    const hasMain = !!(report.geometry?.object || report.summary || details.length);
     return html`<div class="report-detail">
       ${recordHeader({
         badges: [{ label: humanize(report.severity), tone: severityTone(report.severity) }, { label: humanize(report.status), dot: false }],
@@ -116,10 +120,10 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
       })}
       ${s.revision ? html`<p class="report-history-label">Saved version ${s.revision}. This describes the report then, not a current alert.</p>` : nothing}
       ${profile?.stats.length ? html`<div class="stats stats--compact">${profile.stats.map(item => stat({ label: item.label, value: item.value, sub: item.progress ? undefined : item.sub, extra: item.progress ? progress({ value: item.progress.value, label: item.label, text: item.progress.text }) : undefined }))}</div>` : nothing}
-      ${report.summary ? html`<p class="report-summary">${report.summary}</p>` : nothing}
-      ${report.geometry?.object ? html`<sierra-geo-map .props=${mapProps(report, profile?.place)}></sierra-geo-map>` : nothing}
-      ${details.length || report.mesh ? html`<div class="columns columns--wide-narrow report-columns">
+      ${hasMain ? html`<div class="columns columns--wide-narrow report-columns">
         <div class="report-main">
+          ${report.geometry?.object ? html`<sierra-geo-map .props=${mapProps(report, profile?.place)}></sierra-geo-map>` : nothing}
+          ${summaryCard}
           ${details}
         </div>
         <aside class="report-aside" aria-label="Measurements, timeline and original report">${telemetryCard}${timelineCard}${relatedCard}${originalCard}</aside>
