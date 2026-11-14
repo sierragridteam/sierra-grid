@@ -220,7 +220,7 @@ async function wildfires(ctx: Context) {
       </section>
       <div class="dashboard conditions-dashboard">
         ${card({ variant: "panel", title: "This season's fires", kicker: `${stats.count} fires, newest first`, as: "section", class: "conditions-wide", actions: moreLink(browseUrl("WILDFIRE"), "All reports") },
-          season.length ? html`<div class="table-scroll"><table class="table table--cards conditions-table">
+          season.length ? html`<div class="table-scroll"><table class="table table--cards table--fields conditions-table">
             <thead><tr><th scope="col">Fire</th><th scope="col">Started</th><th scope="col" class="conditions-num">Area</th><th scope="col">Contained</th><th scope="col">Where</th></tr></thead>
             <tbody>${season.map((f) => html`<tr>
               <th scope="row"><a href=${recordUrl(f.id, "WILDFIRE")}>${f.name}</a>${f.active ? html` ${badge("Active", { tone: "alarm" })}` : nothing}</th>
@@ -386,7 +386,7 @@ async function power(ctx: Context) {
         ${card({ variant: "panel", title: "Customers affected, by week", kicker: `Interruptions starting each week, past ${WEEKS} weeks${s.more ? " (incomplete)" : ""}`, as: "section", class: live ? "conditions-wide" : "conditions-full" },
           s.past.length ? html`${chart}` : html`<p class="meta conditions-pending">${s.historyLoaded ? "No past interruptions on record." : "Loading the record…"}</p>`)}
         ${card({ variant: "panel", title: "Largest interruptions", kicker: !s.historyLoaded ? "Loading the record…" : `Of ${s.past.length.toLocaleString("en-US")} in the past ${WEEKS} weeks${s.more ? " (incomplete: more than could be read)" : ""}`, as: "section", class: "conditions-full", actions: moreLink(browseUrl("POWER"), "All reports") },
-          largest.length ? html`<div class="table-scroll"><table class="table table--cards conditions-table">
+          largest.length ? html`<div class="table-scroll"><table class="table table--cards table--fields conditions-table">
             <thead><tr><th scope="col">Interruption</th><th scope="col">Started</th><th scope="col" class="conditions-num">Customers</th><th scope="col">Kind</th><th scope="col">Cause</th></tr></thead>
             <tbody>${largest.map((r) => html`<tr>
               <th scope="row"><a href=${recordUrl(r.id, "POWER")}>${r.headline.split(" — ")[0]}</a></th>

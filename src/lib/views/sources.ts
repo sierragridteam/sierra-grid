@@ -77,7 +77,7 @@ export async function mount(ctx: Context) {
           ${g?.[1] ? html`<p class="meta">Feeds <a href=${pageUrl(g[1] as ViewId)}>${g[0]}</a>: what that page shows from this source may be out of date.</p>` : nothing}
         </li>`; })}</ul>`) : nothing}
       ${card({ variant: "panel", title: "Every source", kicker: "Grouped by the page it feeds", as: "section", class: "sources-all" },
-        s.sources.length ? html`<div class="table-scroll"><table class="table table--cards sources-table">
+        s.sources.length ? html`<div class="table-scroll"><table class="table table--cards table--fields sources-table">
           <thead><tr><th scope="col">Source</th><th scope="col">Status</th><th scope="col">Last good reading</th><th scope="col">Checked</th><th scope="col">Stale after</th><th scope="col"><span class="sr-only">Source site</span></th></tr></thead>
           ${groups.map((g) => html`<tbody>
             <tr class="sources-group"><th scope="rowgroup" colspan="6">${g.view ? html`<a href=${pageUrl(g.view as ViewId)}>${g.label}</a>` : g.label}</th></tr>

@@ -66,7 +66,7 @@ function relayPanel(s: State, href: (key: string) => string) {
         <h3 class="mesh-relay__name">${g.name}
           ${g.reporting === undefined ? nothing : badge(g.reporting ? "Reporting" : g.status === "STALE" ? "Stale" : "Not reporting", { tone: g.reporting ? "ok" : "elevated" })}
           <span class="meta">${Number.isFinite(g.lastReport) ? `last report ${since(g.lastReport, s.now)} ago` : "no report yet"}${g.every ? ` · reports about every ${g.every >= 120 ? `${Math.round(g.every / 60)} min` : "minute"}` : ""}</span></h3>
-        <div class="table-scroll"><table class="table table--cards mesh-relay__table">
+        <div class="table-scroll"><table class="table table--cards table--fields mesh-relay__table">
           <thead><tr><th scope="col">Radio</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Last answer</th><th scope="col">Next read</th><th scope="col" class="mesh-relay__num">Battery</th><th scope="col" class="mesh-relay__num">Up for</th></tr></thead>
           <tbody>${[...g.gateways, ...g.repeaters].map((r) => html`<tr>
             <th scope="row"><a href=${href(r.key)}>${r.name}</a></th>

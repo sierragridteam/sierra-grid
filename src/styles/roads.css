@@ -114,6 +114,7 @@
 .sources-error { font-family: var(--font-mono); font-size: var(--fs-small); overflow-wrap: anywhere; }
 .sources-by { display: block; font-weight: 400; }
 .sources-clock { white-space: nowrap; }
+@media (max-width: 600px) { .sources-clock { display: inline; } }
 .sources-group th { padding-top: var(--space-4); font-size: var(--fs-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-secondary); background: none; }
 .sources-footnote, .scanners-footnote { margin-top: var(--space-4); max-width: 85ch; }
 .scanners-feed { --span: 6; }
