@@ -98,13 +98,22 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     </li>`)}</ul>${related.length > 6 ? html`<p class="meta">${related.length - 6} more not shown.</p>` : nothing}`) : nothing;
     const versionsLink = html`<a href="#report-versions" @click=${(event: MouseEvent) => { event.preventDefault(); host.querySelector("#report-versions")?.scrollIntoView({ block: "start" }); }}>${ordered.length === 1 ? "1 version" : `${ordered.length} versions`}</a>`;
     const savedFirst = [...s.revisions].sort((a, b) => Number(a.revision) - Number(b.revision))[0]?.ingestedAt || report.ingestedAt;
-    const original = report.description || profile?.original?.text || "", long = original.length > 320;
+    // Sources hard-wrap their text at 70-odd columns (NWS bulletins); join those lines so the
+    // text fills the column, keeping blank lines as the paragraph breaks they are.
+    const original = (report.description || profile?.original?.text || "").replace(/([^\n])\n(?!\n)/g, "$1 "), long = original.length > 640;
     const fullOriginal = report.description ? undefined : profile?.original?.full;
     const raw = (summary: string) => html`<details class="report-original"><summary>${summary}</summary><p class="report-quote report-quote--long">${original}</p></details>`;
-    // The source's own words, as published; long bulletins fold after a preview.
-    const originalCard = block("Original report", html`${original
-      ? long ? html`<p class="report-quote report-quote--long">${original.slice(0, 280).trimEnd()}…</p>${raw("Show full report")}` : html`<p class="report-quote">${original}</p>`
-      : html`<p class="meta">The source supplied no narrative.</p>`}${fullOriginal ? html`<details class="report-original"><summary>Call transcript</summary><p class="report-quote report-quote--long">${fullOriginal}</p></details>` : nothing}<p class="meta">${linkedSource} · first saved by Grid ${fmt(savedFirst)} · ${versionsLink}</p>`);
+    // What the report says, in the main column under the map: the summary when there is one,
+    // then the source's own words as published (long bulletins fold after a preview). Most
+    // reports have little else, so this is the body of the page, not a side note.
+    const reportCard = block(report.summary ? "Summary" : "Original report", html`
+      ${report.summary ? html`<p class="report-summary">${report.summary}</p>` : nothing}
+      ${report.summary && original ? html`<h4 class="kicker report-group">Original report</h4>` : nothing}
+      ${original
+        ? long ? html`<p class="report-quote report-quote--long">${original.slice(0, 560).trimEnd()}…</p>${raw("Show full report")}` : html`<p class="report-quote">${original}</p>`
+        : report.summary ? nothing : html`<p class="meta">The source supplied no narrative.</p>`}
+      ${fullOriginal ? html`<details class="report-original"><summary>Call transcript</summary><p class="report-quote report-quote--long">${fullOriginal}</p></details>` : nothing}
+      <p class="meta">${linkedSource} · first saved by Grid ${fmt(savedFirst)} · ${versionsLink}</p>`);
     return html`<div class="report-detail">
       ${recordHeader({
         badges: [{ label: humanize(report.severity), tone: severityTone(report.severity) }, { label: humanize(report.status), dot: false }],
@@ -116,14 +125,14 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
       })}
       ${s.revision ? html`<p class="report-history-label">Saved version ${s.revision}. This describes the report then, not a current alert.</p>` : nothing}
       ${profile?.stats.length ? html`<div class="stats stats--compact">${profile.stats.map(item => stat({ label: item.label, value: item.value, sub: item.progress ? undefined : item.sub, extra: item.progress ? progress({ value: item.progress.value, label: item.label, text: item.progress.text }) : undefined }))}</div>` : nothing}
-      ${report.summary ? html`<p class="report-summary">${report.summary}</p>` : nothing}
-      ${report.geometry?.object ? html`<sierra-geo-map .props=${mapProps(report, profile?.place)}></sierra-geo-map>` : nothing}
-      ${details.length || report.mesh ? html`<div class="columns columns--wide-narrow report-columns">
+      <div class="columns columns--wide-narrow report-columns">
         <div class="report-main">
+          ${report.geometry?.object ? html`<sierra-geo-map .props=${mapProps(report, profile?.place)}></sierra-geo-map>` : nothing}
+          ${reportCard}
           ${details}
         </div>
-        <aside class="report-aside" aria-label="Measurements, timeline and original report">${telemetryCard}${timelineCard}${relatedCard}${originalCard}</aside>
-      </div>` : html`<div class="columns report-columns" aria-label="Timeline and original report">${telemetryCard}${timelineCard}${relatedCard}${originalCard}</div>`}
+        <aside class="report-aside" aria-label="Measurements, timeline and related reports">${telemetryCard}${timelineCard}${relatedCard}</aside>
+      </div>
       <section class="report-section report-history" id="report-versions"><h3>Version history</h3>
         ${s.revision ? html`<p class="meta">Complete saved history, including updates after this selected version.</p>` : nothing}
         <div class="report-versions">${repeat(ordered.slice(0, recentUpdates), revision => revision.revision, version)}</div>
