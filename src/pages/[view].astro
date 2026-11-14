@@ -1,0 +1,21 @@
+---
+import ExplorerLayout from "../layouts/ExplorerLayout.astro";
+import { views, type View } from "../config/views";
+export function getStaticPaths() {
+  return views
+    .filter((v) => v.path !== "/")
+    .map((view) => ({
+      params: { view: view.path.replaceAll("/", "") },
+      props: { view },
+    }));
+}
+interface Props {
+  view: View;
+}
+const { view } = Astro.props;
+---
+
+<ExplorerLayout view={view}>
+  <h1>{view.label}</h1>
+  <p class="skeleton skeleton--text">Loading this view…</p>
+</ExplorerLayout>

@@ -1,0 +1,64 @@
+/* Mesh overview: live header, KPIs, a large map and a dense fleet dashboard. */
+.mesh-live { margin: var(--space-2) 0 0; color: var(--ink-secondary); font-size: var(--fs-ui); display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.mesh-live strong { color: var(--brand-green); }
+.mesh-kpis { margin-bottom: var(--space-4); }
+.mesh-map-section { display: grid; gap: var(--space-2); margin-bottom: var(--space-5); }
+.mesh-map-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); }
+.mesh-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin: 0; padding: 0; list-style: none; font-size: var(--fs-small); color: var(--ink-secondary); }
+.mesh-legend li { display: inline-flex; align-items: center; gap: var(--space-2); }
+.mesh-key { display: inline-block; flex: none; }
+.mesh-key--line { width: 1.25rem; height: 3px; border-radius: 2px; background: var(--key); }
+.mesh-key--weight { width: 1.25rem; height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--ink-muted), var(--ink-secondary)); clip-path: polygon(0 40%, 100% 0, 100% 100%, 0 60%); }
+.mesh-key--pulse { width: 0.75rem; height: 0.75rem; border-radius: 50%; background: var(--chart-pine); box-shadow: 0 0 0 4px color-mix(in srgb, var(--chart-pine) 30%, transparent); }
+/* The card over the map for a clicked node or link (DS GeoMap `card`). */
+.mesh-card { display: grid; gap: var(--space-2); min-width: 14rem; }
+.mesh-card p { margin: 0; }
+.mesh-card__title { font-weight: 700; color: var(--ink-strong); font-size: var(--fs-ui); }
+.mesh-card__status { display: flex; align-items: center; gap: var(--space-2); color: var(--ink-secondary); }
+.mesh-card__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-4); margin: 0; }
+.mesh-card__facts dt { font-size: var(--fs-label); color: var(--ink-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
+.mesh-card__facts dd { margin: 0; color: var(--ink-strong); font-variant-numeric: tabular-nums; }
+.mesh-card__issues { margin: 0; }
+.mesh-card__more a { font-weight: 600; }
+/* Dashboard spans (12 columns). */
+.mesh-attention { --span: 4; }
+.mesh-heat { --span: 8; }
+.mesh-traffic, .mesh-battery { --span: 6; }
+.mesh-links { --span: 4; }
+.mesh-nodes { --span: 8; }
+.mesh-issues { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.mesh-issues > li { display: grid; gap: var(--space-1); padding-bottom: var(--space-3); border-bottom: var(--border-soft); }
+.mesh-issues > li:last-child { border-bottom: 0; padding-bottom: 0; }
+.mesh-issues__head { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--fw-semibold); font-size: var(--fs-ui); }
+.mesh-issues__why { margin: 0; padding-left: var(--space-5); font-size: var(--fs-small); color: var(--ink-secondary); }
+.mesh-issues__why .alarm { color: var(--signal-orange-text); }
+.mesh-table { font-size: var(--fs-small); }
+.mesh-table th, .mesh-table td { padding-inline: var(--space-3); }
+.mesh-cell { display: flex; align-items: baseline; gap: var(--space-2); }
+.mesh-cell .mesh-dot { margin-right: 0; flex: none; }
+.mesh-table th[scope="row"] { white-space: nowrap; }
+.mesh-link-table th[scope="row"] { white-space: normal; }
+.mesh-beyond { color: var(--ink-muted); font-size: var(--fs-label); text-transform: uppercase; letter-spacing: var(--tracking-label); }
+.mesh-dot { display: inline-block; width: 0.55rem; height: 0.55rem; margin-right: var(--space-2); border-radius: 50%; background: var(--key); vertical-align: 0.05em; }
+.mesh-spark-cell { display: flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+.mesh-spark-cell sierra-sparkline { width: 4.5rem; }
+.mesh-warn { color: var(--signal-orange-text); font-weight: var(--fw-medium); }
+.mesh-footnote { margin-top: var(--space-4); }
+
+/* Relay and gateways: reporters with the radios each reads. */
+.mesh-relay { --span: 12; }
+.mesh-relay__groups { display: grid; gap: var(--space-5); scroll-margin-top: var(--space-6); }
+.mesh-relay__name { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0 0 var(--space-2); font-family: var(--font-ui); font-size: var(--fs-ui); font-weight: var(--fw-semibold); color: var(--ink-strong); }
+.mesh-relay__name .meta { font-weight: 400; }
+.mesh-relay__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mesh-relay__note { margin: var(--space-4) 0 0; max-width: 95ch; }
+.mesh-relay__next { white-space: nowrap; }
+/* Fixed columns so the reporters' tables line up; on phones the table is cards and has no columns. */
+@media (min-width: 721px) {
+  .mesh-relay__table { table-layout: fixed; }
+  .mesh-relay__table thead th:nth-child(1) { width: 24%; }
+  .mesh-relay__table thead th:nth-child(2) { width: 10%; }
+  .mesh-relay__table thead th:nth-child(3) { width: 14%; }
+  .mesh-relay__table thead th:nth-child(5) { width: 15%; }
+  .mesh-relay__table thead th:nth-child(6), .mesh-relay__table thead th:nth-child(7) { width: 8%; }
+}

@@ -1,0 +1,23 @@
+/* Measurement and source layouts. Reading, table and card styling comes from DS. */
+.measurement-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--space-3); margin-block: var(--space-4); }
+.measurement-card { min-width: 0; }
+.measurement-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin-block: var(--space-3); }
+.measurement-facts dd, .measurement-summary dd, .source-cadence dd { margin: 0; overflow-wrap: anywhere; }
+.measurement-notice { display: flex; align-items: start; justify-content: space-between; gap: var(--space-4); margin-block: var(--space-3); }
+.measurement-summary { display: flex; flex-wrap: wrap; gap: var(--space-5); padding-block: var(--space-3); border-block: var(--border); margin-block: var(--space-4); }
+.measurement-highlight { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--space-4); align-items: center; }
+.mesh-evidence-group, .measurement-reading { margin-block: var(--space-6); }
+.mesh-evidence { padding-block: var(--space-4); border-bottom: var(--border); scroll-margin-top: var(--space-5); }
+.mesh-evidence > p { max-width: 76ch; }
+.measurement-evidence-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: var(--space-3); margin-block: var(--space-3); }
+.measurement-evidence-summary dd { margin: var(--space-1) 0 0; overflow-wrap: anywhere; }
+.mesh-evidence .table-scroll { max-height: 32rem; margin-block: var(--space-3); }
+.mesh-evidence-pages, .measurement-section-links { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-block: var(--space-3); }
+#mesh-latest-readings, #mesh-calculation-evidence { scroll-margin-top: var(--space-7); }
+@media (max-width: 800px) {
+}
+@media (max-width: 600px) {
+  .measurement-notice { flex-direction: column; }
+  .measurement-highlight { grid-template-columns: 1fr; }
+  .measurement-evidence-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

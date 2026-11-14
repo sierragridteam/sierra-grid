@@ -1,13 +1,28 @@
 ---
-import '@fontsource-variable/newsreader/standard.css';
-import '@fontsource-variable/ibm-plex-sans/standard.css';
-import '@fontsource/ibm-plex-mono/400.css';
-import '@fontsource/ibm-plex-mono/500.css';
-import '@sierragridteam/design-system/styles/global.css';
-import IconSprite from '@sierragridteam/design-system/components/IconSprite.astro';
-interface Props { title: string; description?: string; }
-const { title, description = 'Explore SIERRA observations, mesh telemetry and changes over time.' } = Astro.props;
+import "@fontsource-variable/newsreader/standard.css";
+import "@fontsource-variable/ibm-plex-sans/standard.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@sierragridteam/design-system/styles/global.css";
+import ThemeScript from "@sierragridteam/design-system/components/ThemeScript.astro";
+import { ClientRouter } from "astro:transitions";
+import "maplibre-gl/dist/maplibre-gl.css";
+import "../styles/roads.css";
+import "../styles/measurements.css";
+import "../styles/mesh-network.css";
+import "../styles/explorer.css";
+import "../styles/event-browser.css";
+import IconSprite from "@sierragridteam/design-system/components/IconSprite.astro";
+interface Props {
+  title: string;
+  description?: string;
+}
+const {
+  title,
+  description = "Roads, weather, wildfires, power and the SIERRA mesh network for the Ebbetts Pass corridor, from public sources.",
+} = Astro.props;
 ---
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -15,7 +30,8 @@ const { title, description = 'Explore SIERRA observations, mesh telemetry and ch
     <meta name="viewport" content="width=device-width" />
     <title>{title} · S.I.E.R.R.A Grid</title>
     <meta name="description" content={description} />
-    <meta name="robots" content="noindex,nofollow" />
+    <ThemeScript />
+    <ClientRouter />
   </head>
   <body>
     <IconSprite />

@@ -9,3 +9,9 @@ public/brand/
 playwright-report/
 test-results/
 .DS_Store
+
+# Local browser captures
+screenshots/
+root-review/
+
+artifacts/

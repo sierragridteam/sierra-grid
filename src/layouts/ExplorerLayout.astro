@@ -1,0 +1,132 @@
+---
+import BaseLayout from "./BaseLayout.astro";
+import Logo from "@sierragridteam/design-system/components/Logo.astro";
+import Icon from "@sierragridteam/design-system/components/Icon.astro";
+import LineChart from "@sierragridteam/design-system/components/LineChart.astro";
+import ThemeSwitcher from "@sierragridteam/design-system/components/ThemeSwitcher.astro";
+import { views, type View } from "../config/views";
+interface Props {
+  view: View;
+}
+const { view } = Astro.props;
+const groups = [
+  {
+    label: "Explore",
+    items: [
+      ["discover", "Overview", "home"],
+      ["events", "Events", "note"],
+      ["mesh", "Mesh", "grid"],
+      ["roads", "Roads", "grid"],
+      ["weather", "Weather", "sun"],
+    ],
+  },
+  {
+    label: "Conditions",
+    items: [
+      ["WILDFIRE", "Wildfires", "alert"],
+      ["POWER", "Power", "alert"],
+      ["BURN_STATUS", "Burn day", "note"],
+    ],
+  },
+  {
+    label: "Resources",
+    items: [["scanners", "Scanner feeds", "users"], ["sources", "Source health", "info"]],
+  },
+];
+const parent = view.id === "cameras" ? "roads"
+  : view.id === "WEATHER_ALERT" ? "weather" : view.id === "EVACUATION" ? "WILDFIRE" : view.id;
+---
+
+<BaseLayout title={view.label}>
+  <a class="skip-link" href="#main">
+    Skip to content
+  </a>
+  <div class="shell grid-shell" data-drawer="closed">
+    <aside
+      id="grid-navigation"
+      class="sidebar grid-sidebar"
+      transition:persist="grid-sidebar"
+      aria-label="Grid navigation"
+    >
+      <div class="sidebar__brand"><Logo siteName="Grid" height={30} /></div>
+      <nav class="sidebar__nav" aria-label="Main navigation">
+        {groups.map(group => (
+          <div class="sidebar__group">
+            <span class="sidebar__group-label">{group.label}</span>
+            <ul class="sidebar__list">
+              {group.items.map(([id, label, icon]) => (
+                <li>
+                  <a
+                    href={views.find(item => item.id === id)!.path}
+                    class:list={["nav-link", parent === id && "is-active"]}
+                    data-view={id}
+                    aria-current={parent === id ? "page" : undefined}
+                  >
+                    <Icon name={icon} /><span>{label}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </nav>
+      <div class="sidebar__footer">
+        <ThemeSwitcher compact class="sidebar__theme" />
+      </div>
+    </aside>
+    <div class="scrim" data-close-navigation></div>
+    <div class="grid-column">
+      <header class="topbar">
+        <button
+          type="button" class="topbar__toggle" id="navigation-toggle"
+          aria-label="Open navigation" aria-controls="grid-navigation" aria-expanded="false"
+        ><Icon name="menu" /></button>
+        <span class="topbar__title">S.I.E.R.R.A Grid</span>
+      </header>
+      <div class="main">
+      <div class="main__inner main__inner--wide">
+        <main id="main" data-view-root data-view={view.id} tabindex="-1">
+          <nav
+            id="trail"
+            class="grid-trail"
+            aria-label="Page hierarchy"
+          ></nav>
+          <div id="view-period" hidden></div>
+          <section id="content" aria-busy="true">
+            <slot />
+          </section>
+          {view.chart && (
+            <section id="chart-wrap" hidden>
+              <LineChart
+                id="chart"
+                label="Selected measurements"
+                series={[]}
+              />
+            </section>
+          )}
+          <aside id="view-insight" aria-label="Selected readings" hidden></aside>
+          <div id="after-chart"></div>
+          <div
+            id="status"
+            class="field__help"
+            role="status"
+            aria-live="polite"
+          ></div>
+
+          <noscript>
+            <p class="callout">
+              Live observations need JavaScript. The navigation and{" "}
+              <a href="https://data.sierragridteam.org">public data site</a>{" "}
+              remain available.
+            </p>
+          </noscript>
+        </main>
+      </div>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+<script>
+  import { mountExplorer } from "../lib/page";
+  mountExplorer();
+</script>

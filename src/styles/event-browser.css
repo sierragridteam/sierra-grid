@@ -1,0 +1,52 @@
+/* Report browsing: list/detail separation, responsive panes and source evidence. */
+.browser-heading { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-5); }
+/* Filters head the results column, so a selected report's top lines up with them. */
+.browser-filters { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-4); margin-bottom: var(--space-4); }
+.browser-filters .field { flex: 1 1 10.5rem; min-width: 0; }
+.report-browser { display: grid; gap: var(--space-6); align-items: start; }
+.browser-results, .browser-selection { min-width: 0; }
+.browser-selection[hidden] { display: none; }
+.browser-count { margin: 0 0 var(--space-3); }
+.browser-day { padding-block: var(--space-4) var(--space-2); }
+.browser-empty { padding-block: var(--space-6); max-width: 42rem; }
+/* One rhythm for the selected report: header, summary, map, then ruled sections. */
+.report-detail { display: grid; gap: var(--space-5); min-width: 0; }
+.report-detail > * { margin: 0; min-width: 0; }
+.report-summary { margin: 0; }
+.report-section { border-top: var(--border); padding-top: var(--space-5); }
+.report-section > h3 { margin: 0 0 var(--space-3); }
+.report-group { display: block; margin: var(--space-5) 0 var(--space-2); }
+.report-columns { align-items: start; }
+.report-main, .report-aside { display: grid; gap: var(--space-4); min-width: 0; }
+.report-quote { margin: 0; color: var(--ink-body); font-size: var(--fs-ui); white-space: pre-line; overflow-wrap: anywhere; }
+/* Long source text (NWS bulletins, CHP logs) reads better upright, folded after a preview. */
+.report-quote--long { display: block; }
+.report-original { margin-bottom: var(--space-3); }
+.report-original > summary { cursor: pointer; color: var(--brand-green); font-size: var(--fs-ui); padding-block: var(--space-1); }
+.report-block { display: grid; gap: var(--space-3); min-width: 0; padding: var(--space-4) var(--space-5); }
+.report-block__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); }
+.report-block__head > :last-child { flex: none; }
+.report-block > h3, .report-block__head > h3 { margin: 0; font-size: var(--fs-ui); font-weight: var(--fw-semibold); }
+.report-block > * { margin: 0; }
+.report-legend { display: flex; align-items: center; gap: var(--space-2); }
+.report-legend__source, .report-legend__system { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-muted); }
+.report-legend__system { border-radius: 2px; background: transparent; border: 1.5px solid var(--ink-muted); margin-left: var(--space-2); }
+
+.report-version { padding-block: var(--space-3); border-bottom: var(--border-soft); }
+.report-version:last-child { border-bottom: 0; }
+.report-older { border-top: var(--border-soft); }
+.report-older > summary { cursor: pointer; padding-block: var(--space-3); color: var(--brand-green); font-size: var(--fs-ui); }
+.report-history > button { margin-top: var(--space-4); }
+.report-source { overflow-wrap: anywhere; border-top: var(--border); padding-top: var(--space-4); }
+@media (min-width: 1100px) {
+  .report-browser.has-selection { grid-template-columns: minmax(17rem, 0.8fr) minmax(0, 1.4fr); }
+  .report-browser.has-selection .browser-selection { border-left: var(--border); padding-left: var(--space-6); }
+  /* A scrolling column clips at its edges; 4px of padding (cancelled by margin) keeps focus rings (2px + 2px offset) visible. */
+  .report-browser.has-selection .browser-results { position: sticky; top: var(--space-4); max-height: calc(100vh - 2 * var(--space-4)); overflow-y: auto; padding: 4px var(--space-2) 4px 4px; margin: -4px 0 -4px -4px; }
+}
+@media (max-width: 1099px) { .report-browser.has-selection .browser-results { display: none; } }
+@media (max-width: 600px) {
+}
+.report-related { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.report-related li { display: grid; gap: 2px; }
+.report-related a { font-weight: var(--fw-semibold); }

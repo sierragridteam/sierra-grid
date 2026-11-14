@@ -1,11 +1,23 @@
 ---
-import BaseLayout from '../layouts/BaseLayout.astro';
-import Logo from '@sierragridteam/design-system/components/Logo.astro';
+import ExplorerLayout from "../layouts/ExplorerLayout.astro";
+import SummaryBanner from "@sierragridteam/design-system/components/SummaryBanner.astro";
+import Card from "@sierragridteam/design-system/components/Card.astro";
+import MoreLink from "@sierragridteam/design-system/components/MoreLink.astro";
+import { views } from "../config/views";
 ---
-<BaseLayout title="Explorer foundation">
-  <main style="max-width: 70rem; margin: auto; padding: 2rem;">
-    <Logo siteName="Grid" />
-    <h1>Grid explorer foundation</h1>
-    <p>This is the shared starting point for the independent explorer bakeoff.</p>
-  </main>
-</BaseLayout>
+<ExplorerLayout view={views[0]}>
+  <div class="stack grid-overview">
+    <div id="overview-summary"><SummaryBanner kicker="Ebbetts Pass Corridor" level={1} meta="Live source reports, regional conditions and observations.">Checking the latest reports across the corridor.</SummaryBanner></div>
+    <div id="overview-stats"></div>
+    <div class="columns columns--wide-narrow">
+      <Card variant="panel" title="Roads & restrictions" kicker="On the ground" source="Lines: monitored routes · Markers: reported incidents and restrictions">
+        <MoreLink slot="actions" href="/roads/" text="Explore roads" />
+        <div slot="media" id="overview-map"><p>Loading road conditions…</p></div>
+        <div id="overview-road-key" hidden></div>
+      </Card>
+      <div id="overview-weather-panel" class="grid-panel-slot"><Card variant="panel" title="Weather" kicker="Looking ahead"><MoreLink slot="actions" href="/weather/" text="Forecast" /><p>Loading the regional forecast…</p></Card></div>
+    </div>
+    <section aria-labelledby="overview-signs-title"><header class="section-header"><h2 id="overview-signs-title">Highway signs</h2><MoreLink href="/roads/" text="Roads" /><p>What Caltrans message signs on corridor routes are showing now.</p></header><div id="overview-signs"><p>Reading highway signs…</p></div></section>
+  </div>
+  <noscript>Live regional observations require JavaScript.</noscript>
+</ExplorerLayout>

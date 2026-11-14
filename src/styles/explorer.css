@@ -1,0 +1,38 @@
+/* Grid's regional workspace composition. Components and visual treatment are DS. */
+.grid-column, #main, .grid-panel-slot { min-width: 0; }
+.grid-panel-slot { display: grid; }
+#main { min-height: 60vh; }
+.grid-trail, .period-controls, .period-presets, .period-custom, .actions, .controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+#view-period { margin-bottom: var(--space-5); }
+.period-custom, .actions, .controls { margin-block: var(--space-4); align-items: end; }
+.period-custom .field, .controls > .field, .controls > label { flex: 1; min-width: 10rem; }
+.period-custom .field__help { flex-basis: 100%; }
+#content[aria-busy="true"] { cursor: progress; }
+.view-toolbar { float: right; margin-left: var(--space-3); }
+#status { margin-top: var(--space-6); padding-top: var(--space-3); border-top: var(--border-soft); }
+.grid-trail { margin-block: var(--space-3); }
+.grid-trail:empty, #status:empty, .grid-trail[hidden], #view-insight[hidden] { display: none; }
+.grid2, .entry-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); }
+.facts { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-6); margin-block: var(--space-4); }
+.facts dd { margin: var(--space-1) 0 0; }
+.evidence-row { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: var(--space-5); padding-block: var(--space-5); border-bottom: var(--border); }
+.source-text { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 85ch; }
+.camera { width: 100%; aspect-ratio: 16/9; object-fit: cover; }
+.table-scroll { overflow: auto; }
+.more-evidence { margin-top: var(--space-7); }
+#chart-wrap, #view-insight { margin-block: var(--space-5); }
+.investigation-context { display: flex; flex-wrap: wrap; gap: var(--space-3); border-left: var(--border); padding-left: var(--space-3); }
+@media (max-width: 700px) {
+  .grid2, .entry-grid { grid-template-columns: 1fr; }
+  .controls > .field, .controls > label { min-width: 0; flex-basis: 45%; }
+}
+@media (min-width: 1000px) {
+  #main[data-view="mesh"] { display: grid; grid-template-columns: minmax(0, 3fr) minmax(17rem, 1fr); column-gap: var(--space-5); align-items: start; }
+  #main[data-view="mesh"] > * { grid-column: 1 / -1; }
+  #main[data-view="mesh"] > #chart-wrap { grid-column: 1; }
+  #main[data-view="mesh"] > #view-insight { grid-column: 2; }
+}
+@media (scripting: none) and (max-width: 860px) {
+  .grid-shell .sidebar { position: static; transform: none; width: auto; height: auto; }
+  .grid-shell .topbar { display: none; }
+}
