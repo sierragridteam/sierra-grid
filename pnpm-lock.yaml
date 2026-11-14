@@ -179,8 +179,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@sierragridteam/design-system':
-        specifier: ^0.9.3
-        version: 0.9.3(@types/node@26.6.6)(astro@7.4.7(@types/node@26.6.6)(yaml@2.9.1))(chart.js@4.6.1)(maplibre-gl@6.17.0)
+        specifier: ^0.9.4
+        version: 0.9.4(@types/node@26.6.6)(astro@7.4.7(@types/node@26.6.6)(yaml@2.9.1))(chart.js@4.6.1)(maplibre-gl@6.17.0)
       '@sierragridteam/sdk':
         specifier: ^0.2.0
         version: 0.2.0
@@ -951,8 +951,8 @@ packages:
   '@shikijs/vscode-textmate@10.1.0':
     resolution: {integrity: sha512-cVBuhDQjBZaNMTwBquYfPydrUP+E3hE6oYGasx8h6ZrODIM7/r+gxLDXdd66oszbrggZHEntdE6j+5gYIVyMWQ==}
 
-  '@sierragridteam/design-system@0.9.3':
-    resolution: {integrity: sha512-Bp7hM4TWf7KQCCd5EeEQEmb/8avH9dmauroWuMhz3rBb9SpXOGFpmedCbZ7f7GN80cFNxgr20/y55CaL28+Zog==}
+  '@sierragridteam/design-system@0.9.4':
+    resolution: {integrity: sha512-/RsOymCDv4esLmxFt4zJINcN159mGrPDjB0CBWo84uD5TjvEZqz9d7R92InElnRkddMU2pnf/6rGMNVtYrUyhQ==}
     peerDependencies:
       astro: ^7.4.7
       chart.js: ^4.6.1
@@ -2713,7 +2713,7 @@ snapshots:
 
   '@shikijs/vscode-textmate@10.1.0': {}
 
-  '@sierragridteam/design-system@0.9.3(@types/node@26.6.6)(astro@7.4.7(@types/node@26.6.6)(yaml@2.9.1))(chart.js@4.6.1)(maplibre-gl@6.17.0)':
+  '@sierragridteam/design-system@0.9.4(@types/node@26.6.6)(astro@7.4.7(@types/node@26.6.6)(yaml@2.9.1))(chart.js@4.6.1)(maplibre-gl@6.17.0)':
     dependencies:
       '@lit-labs/ssr': 4.1.0(@types/node@26.6.6)
       '@types/geojson': 7946.0.16
