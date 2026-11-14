@@ -1,8 +1,7 @@
 /* Report browsing: list/detail separation, responsive panes and source evidence. */
 .browser-heading { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-5); }
 /* Filters head the results column, so a selected report's top lines up with them. */
-.browser-filters { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-4); margin-bottom: var(--space-4); }
-.browser-filters .field { flex: 1 1 10.5rem; min-width: 0; }
+.browser-filters { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
 .report-browser { display: grid; gap: var(--space-6); align-items: start; }
 .browser-results, .browser-selection { min-width: 0; }
 .browser-selection[hidden] { display: none; }

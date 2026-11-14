@@ -15,6 +15,8 @@ export type State = {
   timeExplicit: boolean;
   eventStatus?: string;
   severity?: string;
+  /** Events: text typed in the search field; narrows the loaded reports. */
+  query?: string;
   revision?: string;
   browserPages?: number;
   autoSelect?: boolean;
@@ -88,6 +90,7 @@ export function parseState(url: URL, now = Date.now()): State {
     browserPages: Math.max(1, Math.min(20, Number(get("pages")) || 1)),
     eventStatus: ["current", "all", "ACTIVE", "SCHEDULED", "RESOLVED", "EXPIRED"].includes(get("status")) ? get("status") : "current",
     severity: ["INFO", "MINOR", "MODERATE", "SEVERE", "EXTREME"].includes(get("severity")) ? get("severity") : "",
+    query: get("q").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80),
     revision: /^\d{1,12}$/.test(get("revision")) ? get("revision") : "",
     archiveSource: /^[a-zA-Z0-9:_-]{1,80}$/.test(get("archiveSource"))
       ? get("archiveSource")
@@ -154,6 +157,7 @@ export function stateUrl(state: State): string {
   if (state.autoSelect === false) q.set("selection", "none");
   if (state.browserPages && state.browserPages > 1) q.set("pages", String(state.browserPages));
   if (state.eventStatus && state.eventStatus !== "current") q.set("status", state.eventStatus);
+  if (state.query && ["events", "changes"].includes(state.topic)) q.set("q", state.query);
   if (state.timeExplicit) q.set("time", "fixed");
   for (const k of [
     "node",

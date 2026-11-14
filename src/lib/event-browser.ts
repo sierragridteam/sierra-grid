@@ -3,14 +3,15 @@ import { navigate, urlState } from "@sierragridteam/design-system/lib/app";
 import { param } from "@sierragridteam/design-system/lib/url-state";
 import { createStore, region } from "@sierragridteam/design-system/lib/region";
 import { html, nothing, repeat } from "@sierragridteam/design-system/lib/template";
-import { feedItem, moreLink, callout } from "@sierragridteam/design-system/lib/ui";
+import { feedItem, moreLink, callout, searchField } from "@sierragridteam/design-system/lib/ui";
+import { focusOnKey } from "@sierragridteam/design-system/lib/dom";
 import { defineSelect, type SelectProps } from "@sierragridteam/design-system/lib/select";
 import { defineLoadMore, type LoadMoreProps } from "@sierragridteam/design-system/lib/load-more";
 import type { Context } from "./context";
 import { data } from "./context";
 import type { EventQuery } from "@sierragridteam/sdk";
 import { stateUrl, defaults } from "./state";
-import { eventTypes, newestFirst, reportFeedProps, type Report, type Revision } from "./event-model";
+import { eventTypes, matchesQuery, newestFirst, reportFeedProps, type Report, type Revision } from "./event-model";
 import { reportDetail } from "./event-detail";
 import { viewFor } from "../config/views";
 
@@ -33,25 +34,42 @@ export async function mount(ctx: Context) {
   const title = viewFor(state.topic).label;
   const destination = (historical: boolean) => stateUrl({ ...state, ...defaults(state.topic), mode: historical ? "history" : "now", record: "", revision: "", timeExplicit: false, browserPages: 1 });
   const patch = (updates: Partial<typeof state>) => void navigate(stateUrl({ ...state, ...updates, record: "", revision: "", browserPages: 1, autoSelect: true }));
-  const choice = (id: string, label: string, items: readonly (readonly string[])[], value: string, field: "layer" | "eventStatus" | "severity") => html`<div class="field"><label class="field__label" for=${id}>${label}</label><sierra-select .props=${{ id, value, options: items.map(([value, label]) => ({ value, label })) } satisfies SelectProps} @change=${(event: Event) => patch({ [field]: (event.currentTarget as { value?: string }).value })}></sierra-select></div>`;
-  const store = createStore({ entries: [] as Entry[], token: "", pages: 0, record: state.record, revision: state.revision || "", loading: true, loadingMore: false, error: "", pageError: "" });
+  // Filter buttons: no label above; the name is announced, and shown inline once the choice is not the default.
+  const choice = (id: string, label: string, items: readonly (readonly string[])[], value: string, fallback: string, field: "layer" | "eventStatus" | "severity", prefix = false) => html`<sierra-select .props=${{ id, value, variant: "filter", label, applied: value !== fallback, prefix: prefix && value !== fallback ? label : undefined, options: items.map(([value, label]) => ({ value, label })) } satisfies SelectProps} @change=${(event: Event) => patch({ [field]: (event.currentTarget as { value?: string }).value })}></sierra-select>`;
+  const types = eventTypes.map(([id, label]) => [id, id === "ALL" ? "Any type" : label] as const);
+  const filtered = allTypes && layer !== "ALL" || !archive && ((state.eventStatus || "current") !== "current" || !!state.severity);
+  const reset = () => void navigate(stateUrl({ ...state, ...(allTypes ? { layer: "ALL" } : {}), eventStatus: "current", severity: "", query: "", record: "", revision: "", browserPages: 1, autoSelect: true }));
+  let urlTimer = 0;
+  const search = (query: string) => {
+    store.set({ query });
+    // The state is current at once, so a filter chosen straight after typing keeps the text;
+    // the address bar follows a beat behind, without a history entry per keystroke.
+    state.query = query.trim();
+    clearTimeout(urlTimer);
+    urlTimer = window.setTimeout(() => { if (!signal.aborted) history.replaceState(history.state, "", stateUrl(state)); }, 200);
+  };
+  const store = createStore({ entries: [] as Entry[], token: "", pages: 0, record: state.record, revision: state.revision || "", loading: true, loadingMore: false, error: "", pageError: "", query: state.query || "" });
   const key = (entry: Entry) => entry.report.id + ":" + (entry.revision?.revision ?? "latest");
   const day = (entry: Entry) => new Date(entry.revision?.observedAt || entry.revision?.ingestedAt || entry.report.ingestedAt).toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", weekday: "short", month: "short", day: "numeric", year: "numeric" });
-  region($("content"), store, s => html`
+  region($("content"), store, s => { const q = s.query.trim(), shown = q ? s.entries.filter(entry => matchesQuery(entry.report, q)) : s.entries, noun = archive ? "saved updates" : "reports"; return html`
     <header class="page-header"><div class="page-header__text"><span class="kicker">Ebbetts Pass corridor</span><h1>${title}</h1><p class="lead">${archive ? "Follow reports through time, one saved update at a time." : "Browse source reports. Select one for its location, details and history."}</p></div></header>
     <div id="browser-period"></div>
     <div class=${`report-browser${s.record ? " has-selection" : ""}`}>
       <section class="browser-results" aria-label="Report results">
-        <form class="browser-filters" aria-label="Filter reports" @submit=${(event: Event) => event.preventDefault()}>
-          ${allTypes ? choice("browser-type", "Type", eventTypes, layer, "layer") : nothing}
-          ${!archive ? html`${choice("browser-status", "Status", [["current", "Active & scheduled"], ["ACTIVE", "Active"], ["SCHEDULED", "Scheduled"], ["all", "All statuses"], ["RESOLVED", "Resolved"], ["EXPIRED", "Expired"]], state.eventStatus || "current", "eventStatus")}${choice("browser-severity", "Importance", [["", "All levels"], ["MODERATE", "Moderate or higher"], ["SEVERE", "Severe or higher"], ["EXTREME", "Extreme"]], state.severity || "", "severity")}` : nothing}
+        <form class="browser-filters" aria-label="Search and filter reports" @submit=${(event: Event) => event.preventDefault()}>
+          ${searchField({ id: "browser-search", label: "Search reports", value: s.query, placeholder: "Search events, places, sources…", shortcut: "/", onInput: search })}
+          <div class="filter-bar">
+            ${allTypes ? choice("browser-type", "Type", types, layer, "ALL", "layer", true) : nothing}
+            ${!archive ? html`${choice("browser-status", "Status", [["current", "Active & scheduled"], ["ACTIVE", "Active"], ["SCHEDULED", "Scheduled"], ["all", "All statuses"], ["RESOLVED", "Resolved"], ["EXPIRED", "Expired"]], state.eventStatus || "current", "current", "eventStatus")}${choice("browser-severity", "Importance", [["", "Any importance"], ["MODERATE", "Moderate or higher"], ["SEVERE", "Severe or higher"], ["EXTREME", "Extreme"]], state.severity || "", "", "severity")}` : nothing}
+            ${filtered || q ? html`<button type="button" class="filter-bar__reset" @click=${reset}>Reset</button>` : nothing}
+          </div>
         </form>
-        <h2 class="sr-only">${archive ? "Saved updates" : "Reports"}</h2><p id="browser-count" class="meta browser-count" role="status">${s.loading ? "Loading reports…" : s.error ? "Reports unavailable" : `${s.entries.length} ${archive ? "saved updates" : "reports"}${s.token ? " loaded · more available" : ""} · ${archive ? "newest reported first" : "newest received first"}`}</p>
-        <div id="browser-list" class="feed">${repeat(s.entries, key, (entry, index) => html`
-          ${archive && (index === 0 || day(entry) !== day(s.entries[index - 1])) ? html`<h3 class="browser-day">${day(entry)}</h3>` : nothing}
+        <h2 class="sr-only">${archive ? "Saved updates" : "Reports"}</h2><p id="browser-count" class="meta browser-count" role="status">${s.loading ? "Loading reports…" : s.error ? "Reports unavailable" : q ? `${shown.length} of ${s.entries.length} ${s.token ? "loaded " : ""}${noun} match${shown.length === 1 && !archive ? "es" : ""}${s.token ? " · load more to search the rest" : ""}` : `${s.entries.length} ${noun}${s.token ? " loaded · more available" : ""} · ${archive ? "newest reported first" : "newest received first"}`}</p>
+        <div id="browser-list" class="feed">${repeat(shown, key, (entry, index) => html`
+          ${archive && (index === 0 || day(entry) !== day(shown[index - 1])) ? html`<h3 class="browser-day">${day(entry)}</h3>` : nothing}
           ${feedItem({ ...reportFeedProps(entry.report, reportLink(ctx, entry.report, entry.revision), entry.revision), selected: entry.report.id === s.record && (!s.revision || String(entry.revision?.revision) === s.revision), onSelect: () => select({ record: entry.report.id, revision: entry.revision ? String(entry.revision.revision) : "", selection: "auto" }) })}
         `)}</div>
-        ${s.error ? callout(html`${s.error}<button class="btn btn--outline" data-retry>Retry reports</button>`, { tone: "brass" }) : !s.loading && !s.entries.length ? html`<div class="browser-empty"><h2>No ${archive ? "saved updates" : "matching reports"} returned</h2><p>${archive ? "No updates returned for this type and period. This does not establish that nothing happened." : "Try all statuses or browse earlier reports. An empty result does not establish clear conditions."}</p>${archive ? moreLink(destination(false), "Check current reports") : state.eventStatus !== "all" ? moreLink(stateUrl({ ...state, eventStatus: "all", record: "", revision: "", browserPages: 1 }), "Include past reports") : nothing}</div>` : nothing}
+        ${s.error ? callout(html`${s.error}<button class="btn btn--outline" data-retry>Retry reports</button>`, { tone: "brass" }) : !s.loading && !s.entries.length ? html`<div class="browser-empty"><h2>No ${archive ? "saved updates" : "matching reports"} returned</h2><p>${archive ? "No updates returned for this type and period. This does not establish that nothing happened." : "Try all statuses or browse earlier reports. An empty result does not establish clear conditions."}</p>${archive ? moreLink(destination(false), "Check current reports") : state.eventStatus !== "all" ? moreLink(stateUrl({ ...state, eventStatus: "all", record: "", revision: "", browserPages: 1 }), "Include past reports") : nothing}</div>` : !s.loading && q && !shown.length ? html`<div class="browser-empty"><h2>No ${s.token ? "loaded " : ""}${archive ? "saved update" : "report"} matches “${q}”</h2><p>${s.token ? "Only the reports loaded so far were searched. Load more, or search with fewer words." : "The search covers headlines, summaries, places, types and sources. An empty result does not establish clear conditions."}</p></div>` : nothing}
         ${!s.loading && !s.error && s.entries.length ? html`<sierra-load-more class="browser-pagination" .props=${{
           // Pages are capped (the URL restores at most MAX_PAGES); past that, narrowing is the way in.
           hasMore: !!s.token && s.pages < MAX_PAGES,
@@ -62,7 +80,8 @@ export async function mount(ctx: Context) {
         } satisfies LoadMoreProps} @load-more=${loadMore}></sierra-load-more>` : nothing}
       </section>
       <section class="browser-selection" aria-label="Selected report" ?hidden=${!s.record}><div id="browser-detail"></div></section>
-    </div>`, { signal });
+    </div>`; }, { signal });
+  focusOnKey("/", () => document.getElementById("browser-search"), signal);
   if (archive && !$("view-period").hidden) $("browser-period").append($("view-period"));
   const showDetail = reportDetail(ctx, $("browser-detail"), {
     href: () => stateUrl({ ...state, record: "", revision: "", autoSelect: false }),
@@ -119,8 +138,12 @@ export async function mount(ctx: Context) {
     do { await load(); } while (!signal.aborted && token && pages < (state.browserPages || 1));
     if (signal.aborted) return;
     if (!state.record && state.autoSelect !== false && entries.length && matchMedia("(min-width: 1100px)").matches) {
-      state.record = entries[0].report.id; state.revision = entries[0].revision ? String(entries[0].revision!.revision) : "";
-      history.replaceState(history.state, "", stateUrl(state));
+      // With a search in the URL, open the first report that matches it, not one the list hides.
+      const first = entries.find(entry => matchesQuery(entry.report, state.query || ""));
+      if (first) {
+        state.record = first.report.id; state.revision = first.revision ? String(first.revision.revision) : "";
+        history.replaceState(history.state, "", stateUrl(state));
+      }
     }
   } catch { if (!signal.aborted) store.set({ error: "Reports could not be retrieved. Your filters are retained." }); }
   if (signal.aborted) return;
