@@ -149,7 +149,7 @@ export async function mount(ctx: Context) {
     const nearby = [...new Set(s.chains.filter((x) => x.level).map((x) => x.highway.replace(/^Highway /, "Hwy ")))].filter((h) => !stretches.some((x) => x.route === h));
     const chainsUnknown = s.errors.includes("chain controls and closure points") && !s.chains.length && !s.closures.length;
     const reportsUnknown = s.errors.includes("road reports") && !s.events.length;
-    const past = chains.flatMap((c) => beyondClosures(c).map((b) => beyondText(c.route, b)));
+    const past = chains.flatMap((c) => beyondClosures(c).map((b) => beyondText(b)));
     return html`
       ${pageHero({ kicker: "Roads & travel · Caltrans and CHP", title: s.loaded ? answer.title : "Checking the roads…", titleClass: "roads-answer", alarm: answer.tone === "alarm", lines: answer.lines })}
       ${s.errors.length ? html`<p class="callout">Not available right now: ${s.errors.join(", ")}. What depends on them is shown as unknown or as last read.</p>` : nothing}
@@ -252,6 +252,10 @@ function scheduleRows(jobs: ReturnType<typeof workJobs>, chains: Chain[], now: n
 
 /** The page's headline: closures first, then what is open, then work. */
 function headline(chains: Chain[], s: State) {
+  const answer = todaysAnswer(chains, s);
+  return { ...answer, lines: [...answer.lines, ...chains.flatMap((c) => beyondClosures(c).map((b) => beyondText(b)))] };
+}
+function todaysAnswer(chains: Chain[], s: State) {
   const lines: string[] = [];
   const closures = s.segments.filter((x) => x.status === "CLOSED").map((x) => {
     const name = segmentName(x.headline), notice = closureNotice(x.description);
@@ -265,8 +269,9 @@ function headline(chains: Chain[], s: State) {
     if (openRun.length === c.sections.length) lines.push(`${c.route} open ${c.stops[0].label} to ${c.stops.at(-1)!.label}`);
     else if (openRun.length) lines.push(`${c.route} open ${c.stops[0].label} to ${c.stops[openRun.length].label}`);
   }
-  // A seasonal closure past a route's end leads too: the route is open, but not through.
-  for (const c of chains) for (const b of beyondClosures(c)) closures.push(beyondText(c.route, b));
+  // A seasonal closure past a route's end holds all winter, so it never leads: the title is
+  // what changed today (a closure on a monitored section, a restriction, chain control). It
+  // is the last line under the title instead, where it stays true without shouting.
   const chained = chains.flatMap((c) => chainStretch(c, s.chains)?.text ?? []).join("; ") || undefined;
   if (chained) lines.unshift(chained);
   const restricted = s.segments.filter((x) => x.status === "RESTRICTED").map((x) => `${x.headline} restricted`);
@@ -331,11 +336,11 @@ function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) =
   const base = strip0();
   return beyond ? {
     ...base,
-    summary: allOpen ? `Open to ${beyond.last} · closed past it${beyond.reason ? ` · ${beyond.reason}` : ""}` : base.summary,
-    summaryTone: "alarm" as StateTone,
+    summary: allOpen ? `${base.summary ?? `Open to ${beyond.last}`} · ${beyond.name} past ${beyond.last}` : base.summary,
+    summaryTone: base.summaryTone,
     length: c.length + stub,
     stops: [...c.stops, { at: c.length + stub, label: beyond.toward ?? "Closed" }],
-    sections: [...base.sections, { from: c.length, to: c.length + stub, tone: "alarm" as StateTone, partial: true, label: `Closed${beyond.reason ? ` · ${beyond.reason}` : ""}`, detail: `${beyond.name}. ${beyond.description ?? ""} Not to scale.`.trim() }],
+    sections: [...base.sections, { from: c.length, to: c.length + stub, tone: "muted" as StateTone, partial: true, label: "Closed for the winter", detail: `${beyond.name}. ${beyond.description ?? ""} Not to scale.`.trim() }],
   } : base;
   function strip0() {
   return {

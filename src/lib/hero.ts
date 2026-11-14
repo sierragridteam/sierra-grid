@@ -1,7 +1,7 @@
 /**
  * The top of every page: kicker, title, a line under it. It is the design
  * system's page header (its type scale and spacing), so a page that states an
- * answer ("Hwy 4 closed past Bear Valley") and one that states its name
+ * answer ("Chains required on Hwy 4 …") and one that states its name
  * ("Events") start at the same place in the same size.
  */
 import { html, nothing } from "@sierragridteam/design-system/lib/template";

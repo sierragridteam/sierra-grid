@@ -162,9 +162,13 @@ export function beyondClosures(c: Chain) {
   };
   return [...at("END"), ...at("START")];
 }
-/** "Hwy 4 closed past Bear Valley to Ebbetts Pass — snow". */
-export const beyondText = (route: string, b: ReturnType<typeof beyondClosures>[number]) =>
-  `${route} closed ${b.side === "END" ? "past" : "before"} ${b.last}${b.toward ? ` ${b.side === "END" ? "to" : "from"} ${b.toward}` : ""}${b.reason ? ` — ${b.reason}` : ""}`;
+/**
+ * "Ebbetts Pass winter closure past Bear Valley". A seasonal closure is a
+ * standing condition (it holds for months), so it is worded as a fact about
+ * the season, not as today's news, and never leads the page.
+ */
+export const beyondText = (b: ReturnType<typeof beyondClosures>[number]) =>
+  `${b.name} ${b.side === "END" ? "past" : "before"} ${b.last}`;
 
 export type ChainSign = { id: string; place: string; direction?: string; level: string; since: number; coordinates?: Position };
 /**

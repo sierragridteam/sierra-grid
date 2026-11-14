@@ -66,7 +66,7 @@ test("a seasonal closure past the last stop leaves the route open to it and name
   ]);
   const [b] = beyondClosures(hwy4);
   assert.deepEqual([b.side, b.name, b.last, b.toward, b.reason], ["END", "Ebbetts Pass winter closure", "Bear Valley", "Ebbetts Pass", "snow"]);
-  assert.equal(beyondText("Hwy 4", b), "Hwy 4 closed past Bear Valley to Ebbetts Pass — snow");
+  assert.equal(beyondText(b), "Ebbetts Pass winter closure past Bear Valley");
   assert.equal(hwy4.sections.every((x) => x.segment.status === "OPEN"), true);
   // A closure listed on a middle section, or one that is not a closure, is not a route-end closure.
   const [other] = routeChains([
