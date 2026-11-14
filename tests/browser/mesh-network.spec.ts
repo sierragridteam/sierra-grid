@@ -88,7 +88,8 @@ test("the relay section says whether each gateway is up and which radios each re
   await expect(rows.first().locator("td[data-label='Status'] .badge")).toHaveText(/Up|Not read|No answer|Reachable|Read overdue/);
   await expect(rows.first().locator("th a")).toHaveAttribute("href", /record=meshcore%3A/);
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  // Polled: a chart keeps its old canvas width for a moment after the viewport shrinks.
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
 });
 
 test("a page-sized map holds its place before it loads, and zooms with Ctrl + wheel while a plain wheel scrolls the page", async ({ page }) => {

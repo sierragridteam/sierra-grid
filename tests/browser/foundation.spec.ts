@@ -119,11 +119,8 @@ test("departed view cannot overwrite new page after a delayed response", async (
   await expect(page.locator("#content .grid-hero .kicker")).toContainText("Roads");
   await expect(page.locator("#chart-wrap")).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth > innerWidth,
-    ),
-  ).toBe(false);
+  // Polled: a chart keeps its old canvas width for a moment after the viewport shrinks.
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
 });
 
 test("source reports retain list context and expose source text and saved changes", async ({ page }) => {
@@ -171,11 +168,8 @@ test("fixed corridor and DS mobile navigation work without global scope controls
     "closed",
   );
   await expect(page.locator("select:visible")).toHaveCount(0);
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth > innerWidth,
-    ),
-  ).toBe(false);
+  // Polled: a chart keeps its old canvas width for a moment after the viewport shrinks.
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
@@ -197,7 +191,8 @@ test("roads answer first, then routes, map, work, signs and quiet cameras", asyn
     expect(new URL((await job.getAttribute("href"))!, page.url()).searchParams.get("record")).toBeTruthy();
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  // Polled: a chart keeps its old canvas width for a moment after the viewport shrinks.
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
@@ -226,7 +221,8 @@ test("weather answers first, places towns against the snow level, and source hea
   await expect(page.locator("#chart-wrap")).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  // Polled: a chart keeps its old canvas width for a moment after the viewport shrinks.
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.locator('.grid-sidebar a[data-view="sources"]').click();
   await ready(page);
@@ -264,7 +260,8 @@ test("wildfires and power answer first and keep the season's record; evacuations
   await expect(page.locator(".conditions-dashboard sierra-bar-chart, .conditions-dashboard .meta").first()).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  // Polled: a chart keeps its old canvas width for a moment after the viewport shrinks.
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
 });
 
 test("preview=live shows the live layout from past records and says it is a test", async ({ page }) => {
@@ -303,7 +300,8 @@ test("source health answers first with an aligned table; scanner feeds are cards
   await expect(page.locator(".sources-table a[href='/earthquakes/']")).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  // Polled: a chart keeps its old canvas width for a moment after the viewport shrinks.
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/scanners/");
   await ready(page);
