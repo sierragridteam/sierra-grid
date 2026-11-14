@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chainStretch, chainPlaces, chainText, beyondClosures, beyondText, alongRoute, closureNotice, routeChains, segmentName, signBoard, workJobs } from "../src/lib/road-corridor.ts";
+import { chainStretch, chainCheckpoints, chainExtent, beyondClosures, beyondText, alongRoute, closureNotice, routeChains, segmentName, signBoard, workJobs } from "../src/lib/road-corridor.ts";
 
 const seg = (headline, coordinates, extra = {}) => ({ id: headline, headline, status: "OPEN", coordinates, ...extra });
 
@@ -77,25 +77,57 @@ test("a seasonal closure past the last stop leaves the route open to it and name
   assert.deepEqual(beyondClosures(routeChains([seg("Hwy 49 — Angels Camp to Sonora", [[-121, 38], [-121, 38.2]])])[0]), []);
 });
 
-test("chain controls: both directions at a place are one entry, and the headline names the monitored routes only", () => {
-  const cc = (id, highway, place, direction, level = "R2") => ({ id, level, highway, direction, place, since: 1000, coordinates: [-120, 38.4] });
-  const places = chainPlaces([
-    cc("a", "Highway 4", "TAMARACK", "Westbound"), cc("b", "Highway 4", "TAMARACK", "Eastbound", "R3"),
-    cc("c", "Highway 4", "BEAR VALLEY", "Eastbound"), cc("d", "Highway 88", "PEDDLER VISTA", "Eastbound"), cc("e", "Highway 207", "MT. REBA SUMMIT", "Southbound"),
-  ]);
-  assert.deepEqual(places.map((p) => [p.highway, p.place, p.level, p.directions]), [["Hwy 4", "Tamarack", "R3", "Both directions"], ["Hwy 4", "Bear Valley", "R2", "Eastbound"], ["Hwy 88", "Peddler Vista", "R2", "Eastbound"], ["Hwy 207", "Mt. Reba Summit", "R2", "Southbound"]]);
-  assert.equal(chainText(places, ["Hwy 4", "Hwy 49"]), "Chains required on Hwy 4 at Tamarack and Bear Valley (R2, R3)");
-  assert.equal(chainText(places, ["Hwy 49"]), undefined);
+// The chain_control layer as the API sends it since 2026-11-14: one feature per stretch, its signs nested.
+const sign = (id, place, direction, coordinates, since = 1000, level = "R2") => ({ id, place, direction, level, since, coordinates });
+const stretch = (id, highway, level, from, to, signs, extra = {}) => ({ id, level, highway, place: `${from} to ${to}`, from, to, since: Math.min(...signs.map((x) => x.since)), coordinates: signs[0].coordinates, signs, ...extra });
+const hwy4Stretch = () => stretch("cc:hwy4:r2", "Highway 4", "R2", "Poison Springs", "Mount Reba Road", [
+  sign("s1", "POISON SPRINGS", "Eastbound", [-120.2, 38.3], 3000), sign("s2", "TAMARACK", "Westbound", [-120.1, 38.35], 2000), sign("s3", "TAMARACK", "Eastbound", [-120.1, 38.351], 2500),
+  sign("s4", "MOUNT REBA ROAD", "Westbound", [-120.0, 38.4], 1000),
+]);
+
+test("chain checkpoints: both directions at a place are one entry, named as a driver reads them", () => {
+  const places = chainCheckpoints(hwy4Stretch());
+  assert.deepEqual(places.map((p) => [p.highway, p.place, p.level, p.directions, p.since]), [
+    ["Hwy 4", "Poison Springs", "R2", "Eastbound", 3000], ["Hwy 4", "Tamarack", "R2", "Both directions", 2000], ["Hwy 4", "Mount Reba Road", "R2", "Westbound", 1000]]);
+  assert.ok(places.every((p) => p.control === "cc:hwy4:r2"));
+  // A truck or hold restriction has no signs: it is its own single checkpoint.
+  const hold = { id: "cc:3-9013", level: "", highway: "US 50", direction: "Westbound", place: "Meyers", since: 5, coordinates: [-120.02, 38.85] };
+  assert.deepEqual(chainCheckpoints(hold).map((p) => [p.id, p.place, p.directions]), [["cc:3-9013", "Meyers", "Westbound"]]);
+  assert.equal(chainExtent(hold).text, "at Meyers");
+  assert.equal(chainExtent(hwy4Stretch()).text, "from Poison Springs to Mount Reba Road");
 });
 
-test("chain control reads as a stretch along the route, lowest checkpoint first", () => {
+test("chain control on a route is the source's stretch, with its own ends", () => {
   const [hwy4] = routeChains([seg("Hwy 4 — Arnold to Bear Valley", [[-120.3, 38.2], [-120.2, 38.3], [-120.0, 38.4]])]);
-  const cc = (id, place, coordinates, level = "R2") => ({ id, level, highway: "Highway 4", direction: "Eastbound", place, since: 1000, coordinates });
-  const places = chainPlaces([cc("a", "BEAR VALLEY", [-120.0, 38.4]), cc("b", "POISON SPRINGS", [-120.2, 38.3]), cc("c", "TAMARACK", [-120.1, 38.35]), { ...cc("d", "PEDDLER VISTA", [-120.27, 38.56]), highway: "Highway 88" }]);
-  const s = chainStretch(hwy4, places);
-  assert.equal(s.text, "Chains required on Hwy 4 from Poison Springs to Bear Valley (R2)");
-  assert.deepEqual(s.places.map((p) => p.place), ["Poison Springs", "Tamarack", "Bear Valley"]);
-  assert.ok(s.from.at < s.to.at);
-  assert.equal(chainStretch(hwy4, chainPlaces([cc("a", "TAMARACK", [-120.1, 38.35])])).text, "Chains required on Hwy 4 at Tamarack (R2)");
-  assert.equal(chainStretch(hwy4, chainPlaces([{ ...cc("d", "PEDDLER VISTA", [-120.27, 38.56]), highway: "Highway 88" }])), undefined);
+  const peddler = stretch("cc:hwy88:r2", "Highway 88", "R2", "Lumber Yard", "Red Lake Creek", [sign("p", "PEDDLER VISTA", "Eastbound", [-120.27, 38.56])]);
+  const s = chainStretch(hwy4, [hwy4Stretch(), peddler]);
+  assert.equal(s.text, "Chains required on Hwy 4 from Poison Springs to Mount Reba Road (R2)");
+  assert.equal(s.where, "Hwy 4 from Poison Springs to Mount Reba Road (R2)");
+  assert.deepEqual(s.stretches[0].checkpoints.map((p) => p.place), ["Poison Springs", "Tamarack", "Mount Reba Road"]);
+  assert.equal(s.since, 1000);
+  assert.equal(chainStretch(hwy4, [peddler]), undefined);
+  // One sign is "at", not "from … to".
+  assert.equal(chainStretch(hwy4, [stretch("cc:hwy4:r2", "Highway 4", "R2", "Tamarack", "Tamarack", [sign("a", "TAMARACK", "Eastbound", [-120.1, 38.35])])]).text, "Chains required on Hwy 4 at Tamarack (R2)");
+});
+
+test("two levels on a route are two stretches, lowest on the route first", () => {
+  const [hwy88] = routeChains([seg("Hwy 88 — Pioneer to Picketts", [[-120.4, 38.5], [-120.0, 38.7], [-119.9, 38.78]])]);
+  const r1 = stretch("cc:hwy88:r1", "Highway 88", "R1", "Pickett's Junction", "Pickett's Junction", [sign("b", "PICKETT'S JUNCTION", "Westbound", [-119.93, 38.775], 1500, "R1")]);
+  const r2 = stretch("cc:hwy88:r2", "Highway 88", "R2", "Lumber Yard", "Red Lake Creek", [sign("a", "LUMBER YARD", "Eastbound", [-120.3, 38.55]), sign("c", "RED LAKE CREEK", "Westbound", [-119.96, 38.71])]);
+  const s = chainStretch(hwy88, [r1, r2]);
+  assert.equal(s.text, "Chains required on Hwy 88 from Lumber Yard to Red Lake Creek (R2) and at Pickett's Junction (R1)");
+  assert.deepEqual(s.levels, ["R1", "R2"]);
+  assert.ok(s.stretches[0].at < s.stretches[1].at);
+});
+
+test("a stretch that begins before the monitored route still counts; a restriction without a level does not", () => {
+  const [hwy4] = routeChains([seg("Hwy 4 — Arnold to Bear Valley", [[-120.3, 38.2], [-120.2, 38.3], [-120.0, 38.4]])]);
+  // Low end 40 km before the route's start; the upper sign sits on it.
+  const long = stretch("cc:hwy4:r1", "Highway 4", "R1", "Far Below", "Tamarack", [sign("x", "FAR BELOW", "Eastbound", [-120.8, 38.0], 1000, "R1"), sign("y", "TAMARACK", "Westbound", [-120.1, 38.35], 1000, "R1")], { inferred: true });
+  const s = chainStretch(hwy4, [long]);
+  assert.equal(s.text, "Chains required on Hwy 4 from Far Below to Tamarack (R1)");
+  assert.deepEqual(s.stretches[0].checkpoints.map((p) => p.place), ["Tamarack"]);
+  assert.equal(s.stretches[0].inferred, true);
+  const hold = { id: "h", level: "", highway: "Highway 4", place: "Tamarack", since: 5, coordinates: [-120.1, 38.35] };
+  assert.equal(chainStretch(hwy4, [hold]), undefined);
 });

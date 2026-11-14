@@ -11,7 +11,7 @@ import { stateUrl } from "../state";
 import { regionTimeZone } from "../time";
 import { ageText } from "../mesh-fleet";
 import {
-  alongRoute, beyondClosures, beyondText, chainPlaces, chainStretch, closureNotice, routeChains, segmentName, signBoard, workJobs, workName,
+  alongRoute, beyondClosures, beyondText, chainCheckpoints, chainExtent, chainStretch, closureNotice, routeChains, segmentName, signBoard, workJobs, workName,
   type Chain, type ChainControl, type Position, type Segment, type Sign, type WorkWindow,
 } from "../road-corridor";
 import { createStore, region } from "@sierragridteam/design-system/lib/region";
@@ -24,6 +24,8 @@ const HOUR = 3_600_000, DAY = 24 * HOUR, REFRESH_MS = 120_000;
 const ON_ROUTE_KM = 1;
 /** Closure points sit at the end of what the source closes; allow more room. */
 const CLOSURE_NEAR_KM = 8;
+/** Said wherever a stretch's extent comes from nearby signs, not from the source's own report of the road between them. */
+const INFERRED_NOTE = "Extent taken from the signs Caltrans lists; the road between them is not confirmed.";
 
 type Layer = Extract<Awaited<ReturnType<Context["client"]["getMapLayer"]>>, { notModified: false }>["data"];
 type EventList = Extract<Awaited<ReturnType<Context["client"]["listEvents"]>>, { notModified: false }>["data"];
@@ -104,8 +106,13 @@ export async function mount(ctx: Context) {
       }) : prev.closures,
       chains: cc ? cc.features.flatMap((f) => {
         const at = pointOf(f.geometry), p = f.properties as any;
-        // Everything in this layer that is not a closure point is a chain requirement in effect.
-        return at && p.category !== "closed" && p.status !== "CLOSED" ? [{ id: p.id, level: p.chainControl?.level || String(p.category ?? "").toUpperCase(), highway: p.chainControl?.highway ?? "", direction: p.chainControl?.direction, place: p.areaLabel || p.headline, since: ms(p.effective), description: p.description, coordinates: at }] : [];
+        const k = p.chainControl ?? {};
+        // Everything in this layer that is not a closure point is a stretch under a chain requirement, with its signs, or a truck or hold restriction (one point, no level).
+        return at && p.category !== "closed" && p.status !== "CLOSED" ? [{
+          id: p.id, level: k.level || String(p.category ?? "").toUpperCase(), highway: k.highway ?? "", direction: k.direction, place: p.areaLabel || p.headline, since: ms(p.effective), description: p.description, coordinates: at,
+          from: k.from?.place, to: k.to?.place, inferred: k.inferred === true,
+          signs: (k.signs ?? []).map((x: any) => ({ id: x.id, place: x.place, direction: x.direction, level: x.level, since: ms(x.since), coordinates: x.coordinates })),
+        }] : [];
       }) : prev.chains,
       signs: ms_ ? ms_.features.map((f) => {
         const p = f.properties as any, s = p.messageSign ?? {};
@@ -137,8 +144,9 @@ export async function mount(ctx: Context) {
     const answer = headline(chains, s);
     // A strip can run past its route (a closed stub beyond the last stop), so the shared scale comes from the strips.
     const strips = chains.map((c) => strip(c, s, work, recordUrl));
-    const chainAt = chainPlaces(s.chains);
-    const stretches = chains.flatMap((c) => chainStretch(c, chainAt) ?? []);
+    const stretches = chains.flatMap((c) => chainStretch(c, s.chains) ?? []);
+    // Requirements on highways that are not monitored routes here: named, never counted as "none".
+    const nearby = [...new Set(s.chains.filter((x) => x.level).map((x) => x.highway.replace(/^Highway /, "Hwy ")))].filter((h) => !stretches.some((x) => x.route === h));
     const chainsUnknown = s.errors.includes("chain controls and closure points") && !s.chains.length && !s.closures.length;
     const reportsUnknown = s.errors.includes("road reports") && !s.events.length;
     const past = chains.flatMap((c) => beyondClosures(c).map((b) => beyondText(c.route, b)));
@@ -148,8 +156,8 @@ export async function mount(ctx: Context) {
       ${s.stale.length ? html`<p class="callout">The source is behind for: ${s.stale.join(", ")}. Treat those parts as last known, not current.</p>` : nothing}
       <div class="stats stats--compact roads-kpis">
         ${stat({ label: "Routes open", value: s.segments.length ? `${open.length} of ${s.segments.length}` : "—", sub: closed.length ? `closure notice: ${closed.map((x) => { const n = segmentName(x.headline); return `${n.route} ${n.from}–${n.to}`; }).join(", ")}` : past.length ? past.join("; ") : "monitored sections" })}
-        ${stat({ label: "Chain controls", value: chainsUnknown ? "—" : s.segments.length || chainAt.length ? (stretches.length ? [...new Set(stretches.flatMap((x) => x.levels))].sort().join(", ") : "None") : "—",
-          sub: stretches.length ? stretches.map((x) => `${x.route} ${x.from.place === x.to.place ? `at ${x.from.place}` : `${x.from.place} to ${x.to.place}`}${Number.isFinite(x.since) ? ` · since ${fmt(x.since)}` : ""}`).join("; ") : chainsUnknown ? "chain control status is unavailable" : chainAt.length ? `none on monitored routes · ${chainAt.map((p) => p.highway).filter((h, i, a) => a.indexOf(h) === i).join(", ")} nearby` : "no chain requirements" })}
+        ${stat({ label: "Chain controls", value: chainsUnknown ? "—" : s.segments.length || s.chains.length ? (stretches.length ? [...new Set(stretches.flatMap((x) => x.levels))].sort().join(", ") : "None") : "—",
+          sub: stretches.length ? stretches.map((x) => `${x.where}${Number.isFinite(x.since) ? ` · since ${fmt(x.since)}` : ""}`).join("; ") : chainsUnknown ? "chain control status is unavailable" : nearby.length ? `none on monitored routes · ${nearby.join(", ")} nearby` : "no chain requirements" })}
         ${stat({ label: "Delay on routes", value: s.segments.length ? minutes(delay) : "—", sub: delay ? "reported across monitored sections" : "traffic is moving freely" })}
         ${stat({ label: "Work zones now", value: reportsUnknown ? "—" : String(activeWork.length), sub: reportsUnknown ? "road reports are unavailable" : activeWork.length ? `lane closures on ${[...new Set(activeWork.map((w) => /^(Hwy \d+)/.exec(w.headline)?.[1] ?? "the corridor"))].join(" and ")}` : "no lane closures in place" })}
         ${stat({ label: "Planned work · 7 days", value: String(jobs.filter((j) => j.windows.some((w) => w.status !== "ACTIVE")).length), sub: upcoming.length ? `${upcoming.length} windows · next ${fmt(Math.min(...upcoming.map((w) => w.start)))}` : "nothing scheduled" })}
@@ -259,7 +267,7 @@ function headline(chains: Chain[], s: State) {
   }
   // A seasonal closure past a route's end leads too: the route is open, but not through.
   for (const c of chains) for (const b of beyondClosures(c)) closures.push(beyondText(c.route, b));
-  const chained = chains.flatMap((c) => chainStretch(c, chainPlaces(s.chains))?.text ?? []).join("; ") || undefined;
+  const chained = chains.flatMap((c) => chainStretch(c, s.chains)?.text ?? []).join("; ") || undefined;
   if (chained) lines.unshift(chained);
   const restricted = s.segments.filter((x) => x.status === "RESTRICTED").map((x) => `${x.headline} restricted`);
   const activeWork = s.events.filter((e) => e.status === "ACTIVE" && e.roadIncident?.closure).length;
@@ -287,10 +295,9 @@ function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) =
     const at = place(closure.coordinates, CLOSURE_NEAR_KM);
     if (at !== undefined) markers.push({ at, kind: "closure", tone: "alarm", label: [closure.headline, closure.direction].filter(Boolean).join(" · "), detail: closure.description });
   }
-  // One marker where chain control begins on the way up; its card lists every checkpoint.
-  const chained = chainStretch(c, chainPlaces(s.chains), CLOSURE_NEAR_KM);
-  if (chained) markers.push({ at: Math.min(c.length, chained.from.at), kind: "chain", label: `${chained.levels.join(", ")} chain control${chained.from.place === chained.to.place ? ` at ${chained.from.place}` : ` from ${chained.from.place} to ${chained.to.place}`}`,
-    detail: chained.places.map((p) => `${p.place}${p.directions ? ` (${p.directions.toLowerCase()})` : ""}${Number.isFinite(p.since) ? ` since ${fmt(p.since)}` : ""}`).join(" · ") });
+  // One marker per stretch, where it begins on the way up; its card lists the checkpoints on this route.
+  for (const x of chainStretch(c, s.chains, CLOSURE_NEAR_KM)?.stretches ?? []) markers.push({ at: Math.min(c.length, x.at), kind: "chain", label: `${x.level} chain control ${x.extent.text}`,
+    detail: [x.checkpoints.map((p) => `${p.place}${p.directions ? ` (${p.directions.toLowerCase()})` : ""}${Number.isFinite(p.since) ? ` since ${fmt(p.since)}` : ""}`).join(" · "), x.inferred ? INFERRED_NOTE : ""].filter(Boolean).join(" — ") });
   const now = s.now;
   // Work that is in place now, or starts within a day: one marker per job.
   const seen = new Set<string>();
@@ -363,8 +370,9 @@ function mapFeatures(s: State) {
   }
   for (const c of s.closures)
     features.push({ type: "Feature", geometry: { type: "Point", coordinates: c.coordinates }, properties: { id: `closure:${c.id}`, kind: "closure", ref: c.id, label: c.headline, tone: "alarm", radius: 7, pulse: true, z: 6 } });
-  for (const p of chainPlaces(s.chains))
-    features.push({ type: "Feature", geometry: { type: "Point", coordinates: p.coordinates }, properties: { id: `chain:${p.id}`, kind: "chain", ref: p.id, label: `${p.level} chain control · ${p.place}`, tone: "glacier", radius: 5, z: 5 } });
+  // Every checkpoint of every stretch: the layer's own point is only the stretch's low end.
+  for (const p of s.chains.flatMap(chainCheckpoints)) if (p.coordinates)
+    features.push({ type: "Feature", geometry: { type: "Point", coordinates: p.coordinates }, properties: { id: `chain:${p.id}`, kind: "chain", ref: p.id, label: `${p.level ? `${p.level} chain control` : "Restriction"} · ${p.place}`, tone: "glacier", radius: 5, z: 5 } });
   // Work: everything active, and the next window of each upcoming job within 7 days.
   const seen = new Set<string>();
   for (const e of [...s.events].sort((a, b) => (a.status === "ACTIVE" ? -1 : 1) - (b.status === "ACTIVE" ? -1 : 1) || ms(a.effective) - ms(b.effective))) {
@@ -410,10 +418,14 @@ function mapCard(s: State, p: Record<string, any>, recordUrl: (id: string) => st
       ${c.description ? html`<p class="roads-card__text">${c.description}</p>` : html`<p class="meta">Caltrans marks a closure here; the closed stretch runs from this point.</p>`}</div>`;
   }
   if (p.kind === "chain") {
-    const c = chainPlaces(s.chains).find((x) => x.id === p.ref);
-    if (!c) return nothing;
-    return html`<div class="roads-card"><p class="roads-card__title">${c.level} chain control · ${c.place}</p>${status("glacier", [c.highway, c.directions].filter(Boolean).join(" · "))}
-      ${c.description ? html`<p class="roads-card__text">${c.description}</p>` : nothing}${Number.isFinite(c.since) ? html`<p class="meta">Since ${fmt(c.since)}</p>` : nothing}</div>`;
+    const c = s.chains.flatMap(chainCheckpoints).find((x) => x.id === p.ref);
+    const control = c && s.chains.find((x) => x.id === c.control);
+    if (!c || !control) return nothing;
+    const extent = chainExtent(control);
+    return html`<div class="roads-card"><p class="roads-card__title">${c.level ? `${c.level} chain control` : "Restriction"} · ${c.place}</p>${status("glacier", [c.highway, c.directions].filter(Boolean).join(" · "))}
+      ${control.description ? html`<p class="roads-card__text">${control.description}</p>` : nothing}
+      ${control.signs?.length && !extent.single ? html`<p class="meta">Part of the ${control.level} stretch ${extent.text}${control.inferred ? `. ${INFERRED_NOTE}` : ""}</p>` : nothing}
+      ${Number.isFinite(c.since) ? html`<p class="meta">Since ${fmt(c.since)}</p>` : nothing}</div>`;
   }
   if (p.kind === "event") {
     const e = s.events.find((x) => x.id === p.ref);

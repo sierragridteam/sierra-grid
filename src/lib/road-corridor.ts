@@ -166,48 +166,74 @@ export function beyondClosures(c: Chain) {
 export const beyondText = (route: string, b: ReturnType<typeof beyondClosures>[number]) =>
   `${route} closed ${b.side === "END" ? "past" : "before"} ${b.last}${b.toward ? ` ${b.side === "END" ? "to" : "from"} ${b.toward}` : ""}${b.reason ? ` — ${b.reason}` : ""}`;
 
-export type ChainControl = { id: string; level: string; highway: string; direction?: string; place: string; since: number; description?: string; coordinates: Position };
+export type ChainSign = { id: string; place: string; direction?: string; level: string; since: number; coordinates?: Position };
 /**
- * Chain control checkpoints as places: the two directions at one place are
- * one entry, keeping the strictest level (R3 over R2 over R1).
+ * One feature of the chain-control layer that is not a closure point. The
+ * source groups its signs: a requirement is one stretch of highway at one
+ * level, with its ends named and every Caltrans sign listed in `signs`. A
+ * truck or hold restriction is a single point with no level and no signs.
  */
-export function chainPlaces(controls: ChainControl[]) {
-  const rank = (level: string) => Number(/\d/.exec(level)?.[0] ?? 0);
-  const title = (text: string) => text.toLowerCase().replace(/(^|[\s.])([a-z])/g, (_, a, b) => a + b.toUpperCase());
-  const groups = new Map<string, ChainControl[]>();
-  for (const c of controls) { const key = `${c.highway}|${c.place.toUpperCase()}`; groups.set(key, [...(groups.get(key) ?? []), c]); }
+export type ChainControl = {
+  id: string; level: string; highway: string; direction?: string; place: string; since: number; description?: string; coordinates: Position;
+  /** The ends of the stretch as the source names them. */
+  from?: string; to?: string; signs?: ChainSign[];
+  /** The extent was put together from nearby signs; nothing reports the road between them. */
+  inferred?: boolean;
+};
+const titleCase = (text: string) => text.toLowerCase().replace(/(^|[\s./(])([a-z])/g, (_, a, b) => a + b.toUpperCase());
+const shortRoute = (highway: string) => highway.replace(/^Highway /, "Hwy ");
+const levelRank = (level: string) => Number(/\d/.exec(level)?.[0] ?? 0);
+
+/**
+ * The checkpoints of a control as places: the two directions at one place are
+ * one entry, keeping the strictest level. A control without signs is its own
+ * single checkpoint.
+ */
+export function chainCheckpoints(control: ChainControl) {
+  const signs: ChainSign[] = control.signs?.length ? control.signs
+    : [{ id: control.id, place: control.place, direction: control.direction, level: control.level, since: control.since, coordinates: control.coordinates }];
+  const groups = new Map<string, ChainSign[]>();
+  for (const sign of signs) { const key = sign.place.toUpperCase(); groups.set(key, [...(groups.get(key) ?? []), sign]); }
   return [...groups.values()].map((group) => {
-    const top = group.reduce((a, c) => (rank(c.level) > rank(a.level) ? c : a));
+    const top = group.reduce((a, c) => (levelRank(c.level) > levelRank(a.level) ? c : a));
     const directions = [...new Set(group.map((c) => c.direction).filter(Boolean))] as string[];
     return {
-      id: top.id, level: top.level, highway: top.highway.replace(/^Highway /, "Hwy "), place: title(top.place), description: top.description,
+      id: top.id, control: control.id, level: top.level, highway: shortRoute(control.highway), place: titleCase(top.place),
       directions: directions.length > 1 ? "Both directions" : directions[0] ?? "", since: Math.min(...group.map((c) => c.since).filter(Number.isFinite)),
-      coordinates: top.coordinates,
+      coordinates: group.find((c) => c.coordinates)?.coordinates,
     };
   });
 }
-/** "Chains required on Hwy 4 at Tamarack and Bear Valley (R2)", for the routes given. */
-export function chainText(places: ReturnType<typeof chainPlaces>, routes: string[]) {
-  const mine = places.filter((p) => routes.includes(p.highway));
-  if (!mine.length) return undefined;
-  const byRoute = routes.flatMap((r) => { const at = mine.filter((p) => p.highway === r); return at.length ? [`${r} at ${listOf(at.map((p) => p.place))}`] : []; });
-  const levels = [...new Set(mine.map((p) => p.level))].sort();
-  return `Chains required on ${byRoute.join("; ")} (${levels.join(", ")})`;
+export type ChainCheckpoint = ReturnType<typeof chainCheckpoints>[number];
+
+/** "Poison Springs to Mount Reba Road", or the one place when the stretch has a single end. */
+export function chainExtent(control: ChainControl) {
+  const from = control.from || titleCase(control.place), to = control.to || from;
+  return { from, to, single: from === to, text: from === to ? `at ${from}` : `from ${from} to ${to}` };
 }
-const listOf = (items: string[]) => (items.length < 3 ? items.join(" and ") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
 
 /**
- * Chain control on a route as a stretch: from the lowest checkpoint requiring
- * chains to the highest. Caltrans posts each checkpoint and direction
- * separately; a driver needs where it starts and how far it runs.
+ * Chain control on a monitored route: the source's stretches that touch it,
+ * in order along it. A stretch belongs to the route when any of its signs is
+ * near the route, not only its low end, so one that begins before the
+ * monitored sections still counts. Restrictions without a level (truck or
+ * hold) are not chain requirements and are left out.
  */
-export function chainStretch(c: Chain, places: ReturnType<typeof chainPlaces>, nearKm = 8) {
-  const on = places.filter((p) => p.highway === c.route).map((p) => ({ ...p, ...alongRoute(c, p.coordinates) })).filter((p) => p.off <= nearKm).sort((a, b) => a.at - b.at);
-  if (!on.length) return undefined;
-  const levels = [...new Set(on.map((p) => p.level))].sort();
-  const from = on[0], to = on.at(-1)!;
+export function chainStretch(c: Chain, controls: ChainControl[], nearKm = 8) {
+  const stretches = controls.filter((x) => x.level && shortRoute(x.highway) === c.route).flatMap((control) => {
+    const checkpoints = chainCheckpoints(control).flatMap((p) => (p.coordinates ? [{ ...p, ...alongRoute(c, p.coordinates) }] : []));
+    const on = checkpoints.filter((p) => p.off <= nearKm).sort((a, b) => a.at - b.at);
+    if (!on.length) return [];
+    return [{ control, level: control.level, extent: chainExtent(control), at: on[0].at, checkpoints: on, since: control.since, inferred: !!control.inferred }];
+  }).sort((a, b) => a.at - b.at);
+  if (!stretches.length) return undefined;
+  const levels = [...new Set(stretches.map((x) => x.level))].sort();
+  const parts = stretches.map((x) => `${x.extent.text} (${x.level})`);
   return {
-    route: c.route, from, to, places: on, levels, since: Math.min(...on.map((p) => p.since).filter(Number.isFinite)),
-    text: `Chains required on ${c.route} ${from.place === to.place ? `at ${from.place}` : `from ${from.place} to ${to.place}`} (${levels.join(", ")})`,
+    route: c.route, stretches, levels, at: stretches[0].at, since: Math.min(...stretches.map((x) => x.since).filter(Number.isFinite)),
+    /** "Hwy 4 from Poison Springs to Mount Reba Road (R2)". */
+    where: `${c.route} ${listOf(parts)}`,
+    text: `Chains required on ${c.route} ${listOf(parts)}`,
   };
 }
+const listOf = (items: string[]) => (items.length < 3 ? items.join(" and ") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
