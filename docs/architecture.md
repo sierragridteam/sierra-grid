@@ -20,6 +20,7 @@ on demand. `src/pages/[view].astro` and `index.astro` render the shell
 | `/weather/` | `weather` | Answer, tiles, elevation profile, alert map, hourly grid, week |
 | `/wildfires/`, `/power/` | `conditions` | Live when something is active; the season's record when not |
 | `/mesh/` | `mesh` → `mesh-network` | Map, fleet dashboard, relay and gateways |
+| `/search/` | `search` | One box across reports, mesh nodes, roads, cameras and scanner feeds |
 | `/scanners/`, `/sources/`, `/cameras/` | their own | Directories and health |
 
 `src/pages/404.astro` is the not-found page: the same shell and sidebar, no
@@ -49,6 +50,25 @@ Selecting or closing a report pushes a history entry without a navigation, so
 the list is not reloaded; Back and Forward go through the router, which mounts
 the page again from the URL. On a phone the list leads and Back from an open
 report returns to it. On desktop the first result opens beside the list.
+
+**Search is the service's.** The box above the list sends its text to the
+API (`q` on `/api/v1/events`, and on `/api/v1/history` in the saved-updates
+view) a quarter of a second after typing pauses, with `qTyping` so the word
+being typed matches as a prefix. Nothing is matched in the browser: the count
+line is the service's total over every page, and a match in a report's own
+text comes back as an excerpt with the matched words flagged. The list stays
+on screen until the new answer lands; an answer to older text is dropped and
+its request cancelled. `search-model.ts` decides the words: a count, what an
+empty result does and does not mean, and why a search could not be answered
+(the service refuses with 503 while it rebuilds its index, which is shown as
+an error and never as no results).
+
+The Search page (`views/search.ts`, `finder-model.ts`) asks
+`/api/v1/search` for the best few hits of each kind Grid has a page for,
+scoped to the corridor. It is for finding a thing by name and going to its
+page; "All N in Events" hands a long list over to the report browser. A kind
+the service could not search is named on the page, because its absence is
+unknown and not none.
 
 `report-profile.ts` turns each report type into tiles, sections and a timeline
 (a mesh node's monitor readings are dated, and a repeater read on schedule is

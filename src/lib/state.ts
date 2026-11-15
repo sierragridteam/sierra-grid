@@ -157,7 +157,7 @@ export function stateUrl(state: State): string {
   if (state.autoSelect === false) q.set("selection", "none");
   if (state.browserPages && state.browserPages > 1) q.set("pages", String(state.browserPages));
   if (state.eventStatus && state.eventStatus !== "current") q.set("status", state.eventStatus);
-  if (state.query && ["events", "changes"].includes(state.topic)) q.set("q", state.query);
+  if (state.query && ["events", "changes", "search"].includes(state.topic)) q.set("q", state.query);
   if (state.timeExplicit) q.set("time", "fixed");
   for (const k of [
     "node",

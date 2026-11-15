@@ -166,3 +166,84 @@ test("saved updates are searched by what each one said, with the service's count
   await expect(page.locator(".browser-empty")).toContainText("in this period");
   await expect(page.locator(".browser-empty")).toContainText("does not establish clear conditions");
 });
+
+test("the Search page finds things of every kind and leads to their pages", async ({ page }) => {
+  const asked: URL[] = [];
+  page.on("request", request => { const url = new URL(request.url()); if (url.pathname === "/api/v1/search") asked.push(url); });
+  await page.goto("/"); await ready(page);
+  await page.locator('.grid-sidebar [data-view="search"]').click(); await ready(page);
+  await expect(page).toHaveURL(/\/search\/$/);
+  await expect(page.locator("h1")).toHaveText("Search");
+  // Nothing asked, nothing claimed: a hint, no results and no "0 matches".
+  await expect(page.locator(".finder-help")).toBeVisible();
+  await expect(page.locator("#finder-status")).toHaveText("");
+  expect(asked).toEqual([]);
+
+  await page.locator("h1").click();
+  await page.keyboard.press("/");
+  await expect(page.locator("#finder-search")).toBeFocused();
+  await page.keyboard.type("hwy 4");
+  await expect(page.locator("#finder-status")).toHaveText(/^[\d,]+ match(es)?: /, { timeout: 30000 });
+  // One question for the phrase, scoped to the corridor and to the kinds Grid has pages for.
+  expect(asked.length).toBeLessThanOrEqual(3);
+  const last = asked.at(-1)!;
+  expect(last.searchParams.get("q")).toBe("hwy 4");
+  expect(last.searchParams.get("qTyping")).toBe("true");
+  expect(last.searchParams.get("place")).toBe("ebbetts-pass");
+  expect(last.searchParams.getAll("kind").join(",")).toBe("EVENT,MESH_NODE,ROAD,CAMERA,SCANNER");
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("hwy 4");
+
+  // Highway 4 is a monitored road, whatever is happening on it today.
+  const roads = page.locator(".finder-group", { has: page.locator("h2", { hasText: "Roads" }) });
+  await expect(roads.locator(".feed-item").first()).toContainText("Hwy 4");
+  await expect(roads.locator(".feed-item a").first()).toHaveAttribute("href", "/roads/");
+  expect((await new AxeBuilder({ page }).include("#content").analyze()).violations).toEqual([]);
+
+  // A reload asks the same thing; a report hit opens that report in Events.
+  await page.reload(); await ready(page);
+  await expect(page.locator("#finder-search")).toHaveValue("hwy 4");
+  await expect(page.locator("#finder-status")).toHaveText(/^[\d,]+ match(es)?: /, { timeout: 30000 });
+  const reports = page.locator(".finder-group", { has: page.locator("h2", { hasText: "Reports" }) });
+  if (await reports.count()) {
+    const title = await reports.locator(".feed-item a").first().innerText();
+    await reports.locator(".feed-item a").first().click(); await ready(page);
+    await expect(page).toHaveURL(/\/events\/\?.*record=/);
+    await expect(page.locator("#browser-detail h2")).toHaveText(title, { timeout: 30000 });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/search/?q=hwy+4"); await ready(page);
+  await expect(page.locator("#finder-status")).toHaveText(/^[\d,]+ match(es)?: /, { timeout: 30000 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+});
+
+test("the Search page says what nothing found means, and never invents an empty answer", async ({ page }) => {
+  await page.goto("/search/?q=zzzz-no-such-thing"); await ready(page);
+  await expect(page.locator(".browser-empty h2")).toHaveText("Nothing matches “zzzz-no-such-thing”", { timeout: 30000 });
+  await expect(page.locator(".browser-empty")).toContainText("does not establish clear conditions");
+  await expect(page.locator("#finder-status")).toHaveText("0 matches");
+  await expect(page.locator(".finder-group")).toHaveCount(0);
+
+  // A kind the service could not search is named, not shown as none.
+  await page.route(url => url.pathname === "/api/v1/search" && url.searchParams.get("q") === "bear valley", route => route.fulfill({
+    status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" },
+    body: JSON.stringify({ hits: [], totals: [{ kind: "EVENT", matches: 0 }, { kind: "MESH_NODE", matches: 0 }, { kind: "ROAD", matches: 0 }, { kind: "SCANNER", matches: 0 }], unavailable: ["CAMERA"], search: { query: "bear valley", since: "2026-07-07T00:19:16Z", note: "note" } }),
+  }));
+  await page.locator("#finder-search").fill("bear valley");
+  await expect(page.locator("#content .callout")).toContainText("Road cameras could not be searched just now", { timeout: 30000 });
+  await expect(page.locator(".browser-empty")).toHaveCount(0);
+  await expect(page.locator("#content")).not.toContainText("Nothing matches");
+
+  // The index being rebuilt: an error, with the box still usable.
+  await page.route(url => url.pathname === "/api/v1/search" && url.searchParams.get("q") === "flooded", route => route.fulfill({
+    status: 503, contentType: "application/json", headers: { "access-control-allow-origin": "*", "retry-after": "5" },
+    body: JSON.stringify({ code: 14, codeName: "UNAVAILABLE", message: "the search index is still being built", details: [] }),
+  }));
+  await page.locator("#finder-search").fill("flooded");
+  await expect(page.locator("#content .callout")).toContainText("index is being rebuilt", { timeout: 30000 });
+  await expect(page.locator("#finder-status")).toHaveText("Search unavailable");
+  await expect(page.locator("#content")).not.toContainText(/Nothing matches|0 matches/);
+  // Clearing the box clears the page back to the hint.
+  await page.locator("#finder-search").fill("");
+  await expect(page.locator(".finder-help")).toBeVisible({ timeout: 30000 });
+  await expect(page.locator("#content .callout")).toHaveCount(0);
+});

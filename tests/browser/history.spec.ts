@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { useApiOrigin } from "./api-origin";
 const ready = async (page: import("@playwright/test").Page) => expect(page.locator("#content")).toHaveAttribute("aria-busy", "false", { timeout: 45000 });
+test.beforeEach(async ({ page }) => { await useApiOrigin(page); });
 
 test("old History links open Events with past reports included", async ({ page }) => {
   await page.goto("/history/?layer=ROAD_INCIDENT");

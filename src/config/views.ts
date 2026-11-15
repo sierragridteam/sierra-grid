@@ -18,6 +18,15 @@ export const views = [
     chart: false,
   },
   {
+    id: "search",
+    path: "/search/",
+    label: "Search",
+    module: "search",
+    defaultMode: "now",
+    days: 1,
+    chart: false,
+  },
+  {
     id: "roads",
     path: "/roads/",
     label: "Roads and travel",
