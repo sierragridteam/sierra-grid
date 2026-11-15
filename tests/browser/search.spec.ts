@@ -182,14 +182,15 @@ test("Search in revision history finds reports by any stored version, and opens 
   await expect(page.locator(".browser-empty")).toContainText("does not establish clear conditions");
   await expect(page.locator("#finder-status")).toHaveText(/^0 reports have a matching revision/);
   // A revision search the service cannot answer is an error, never "no revision matches".
-  await page.route(url => url.pathname === "/api/v1/history" && url.searchParams.get("q") === "flooded", route => route.fulfill({
+  await page.route(url => url.pathname === "/api/v1/history" && url.searchParams.get("q") === "zzzz-index-rebuilding", route => route.fulfill({
     status: 503, contentType: "application/json", headers: { "access-control-allow-origin": "*", "retry-after": "5" },
     body: JSON.stringify({ code: 14, codeName: "UNAVAILABLE", message: "the search index is still being built", details: [] }),
   }));
-  await page.locator("#finder-search").fill("flooded");
+  await page.locator("#finder-search").fill("zzzz-index-rebuilding");
   await expect(page.locator("#content .callout")).toContainText("index is being rebuilt", { timeout: 30000 });
   await expect(page.locator("#finder-status")).toHaveText("Search unavailable");
   await expect(page.locator(".browser-empty")).toHaveCount(0);
+  // (A made-up word: a real one can be in today's headlines, which this test also searches.)
   // Too many words is said as that, not as "nothing to look for".
   const long = Array.from({ length: 17 }, (_, i) => "word" + i).join(" ");
   await page.locator("#finder-search").fill(long);
