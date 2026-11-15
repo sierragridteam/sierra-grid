@@ -134,7 +134,7 @@ test("source reports retain list context and expose source text and revisions", 
   expect(new URL(page.url()).searchParams.get("record")).toBe(id);
   await expect(page.locator(".browser-results")).toBeVisible();
   await expect(page.locator("#browser-detail h2")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Version history", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Revision history", exact: true })).toBeVisible();
   await expect(page.locator("#browser-detail")).not.toContainText("protojson");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("link", { name: "Close report", exact: true }).click();
