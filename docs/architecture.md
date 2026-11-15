@@ -66,6 +66,13 @@ from `/api/v1/events` with `q`: every status, newest first, a page at a time,
 with the service's total over all pages and an excerpt where the match is in
 a report's own text. A report opens in Events.
 
+`kind=REVISIONS` ("Search in revision history", offered under any answer,
+including an empty one) searches every stored revision of every report, so
+it finds wording a source has since changed. It asks `/api/v1/history` with
+`q` and `collapse=event`: one row per report, saying which revisions matched
+(first, last, how many), latest match first. A row opens the report in Events
+at its first matching revision. The saved-updates view itself has no text box.
+
 Nothing is matched in the browser. The text is sent a quarter of a second
 after typing pauses, with `qTyping` so the word being typed matches as a
 prefix; the results on screen stay until the new answer lands, and an answer

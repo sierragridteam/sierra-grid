@@ -2,7 +2,9 @@
  * Search: the one place text is searched. The box finds the best few reports,
  * mesh nodes, monitored roads, cameras and scanner feeds and leads to each
  * one's page; for reports and nodes it can also list every match, newest
- * first. The Events page browses by type, status and importance, not by text.
+ * first, or search the revision history: every version of a report Grid has
+ * stored, including wording a source has since changed. The Events page
+ * browses by type, status and importance, not by text.
  */
 import type { Context } from "../context";
 import { data } from "../context";
@@ -10,7 +12,8 @@ import { pageHero } from "../hero";
 import { stateUrl } from "../state";
 import { httpUrl } from "../render";
 import { humanize, relativeTime, reportFeedProps, typeLabel, type Report } from "../event-model";
-import { matchCount, matchExcerpt, searchFailure, searchParams, type Match } from "../search-model";
+import { regionalTime } from "../time";
+import { historyCount, historyEmpty, matchCount, matchExcerpt, revisionSpan, searchFailure, searchParams, type Match } from "../search-model";
 import { allOfKind, finderAnswer, finderEmpty, finderKinds, kindLayers, kindNoun, listEmpty, type ListedKind } from "../finder-model";
 import type { EventQuery, V1SearchHit, V1SearchResults } from "@sierragridteam/sdk";
 import { createStore, region } from "@sierragridteam/design-system/lib/region";
@@ -26,7 +29,8 @@ const PER_KIND = 5;
 /** The URL restores at most this many pages of a full list (state.ts clamps `pages` to 20). */
 const MAX_PAGES = 20;
 
-type Row = { report: Report; match: Match };
+/** `history` is set in a search of the revision history: which of the report's revisions matched. */
+type Row = { report: Report; match: Match; history?: { first: number; last: number; lastAt: string; matching: number } };
 /** A full list of one kind: every match the service has, a page at a time. */
 type Listing = { rows: Row[]; token: string; pages: number; total: number | null; since: string | null };
 
@@ -34,13 +38,14 @@ export async function mount(ctx: Context) {
   defineLoadMore();
   const { state, client, $, signal } = ctx;
   // "" is the best few of every kind; a kind is that kind listed in full.
-  const kind: ListedKind | "" = state.query ? state.searchKind || "" : "";
+  const kind: ListedKind | "REVISIONS" | "" = state.query ? state.searchKind || "" : "";
   const store = createStore({ query: state.query || "", asked: "", searching: false, error: "", result: null as V1SearchResults | null, listing: null as Listing | null, loadingMore: false, pageError: "" });
 
   // Where each kind of hit lives in Grid.
   const page = (topic: "roads" | "cameras" | "scanners") => stateUrl({ ...state, topic, layer: "ALL", query: "", searchKind: "", record: "", revision: "", browserPages: 1, timeExplicit: false });
   const report = (id: string, mesh: boolean) => stateUrl({ ...state, topic: "events", layer: mesh ? "MESH" : "ALL", eventStatus: "all", severity: "", query: "", searchKind: "", record: id, revision: "", browserPages: 1, autoSelect: true, timeExplicit: false });
-  const scope = (to: ListedKind | "", query: string) => stateUrl({ ...state, query, searchKind: to, browserPages: 1 });
+  const revision = (id: string, n: number) => stateUrl({ ...state, topic: "events", layer: "ALL", eventStatus: "all", severity: "", query: "", searchKind: "", record: id, revision: String(n), browserPages: 1, autoSelect: true, timeExplicit: false });
+  const scope = (to: ListedKind | "REVISIONS" | "", query: string) => stateUrl({ ...state, query, searchKind: to, browserPages: 1 });
   const excerpt = (match: Match) => {
     const parts = matchExcerpt(match);
     return parts ? html`<p class="feed-item__match">${parts.map(part => part.hit ? html`<mark>${part.text}</mark>` : part.text)}</p>` : nothing;
@@ -65,14 +70,27 @@ export async function mount(ctx: Context) {
   }
   function listRow(row: Row) {
     const mesh = row.report.layer === "MESH";
+    if (row.history) {
+      // The report as it read at its first matching revision, opened at that revision.
+      const h = row.history, props = reportFeedProps(row.report, revision(row.report.id, h.first));
+      return feedItem({ ...props, received: undefined, receivedAt: undefined, when: `${revisionSpan(h.first, h.last, h.matching)} · ${h.last === h.first ? "" : "last "}${regionalTime(h.lastAt)}` }, excerpt(row.match));
+    }
     const props = reportFeedProps(row.report, report(row.report.id, mesh));
     return feedItem(mesh ? { ...props, severity: undefined, tags: [humanize(row.report.category || "node"), humanize(row.report.status)] } : props, excerpt(row.match));
   }
 
+  // The revision history is searched whole: from before Grid kept anything to now (fixed at
+  // mount, so every page of one list asks about the same span).
+  const everything = { from: "2020-01-01T00:00:00.000Z", to: new Date(Date.now() + 3600000).toISOString() };
   let run = 0, request = new AbortController(), timer = 0;
   signal.addEventListener("abort", () => { request.abort(); clearTimeout(timer); });
   /** One more page of the full list, onto `from` (nothing, for a new question). */
   async function listPage(query: string, from: Listing | null): Promise<Listing> {
+    if (kind === "REVISIONS") {
+      const response = await data(client.listHistory({ place: state.place, ...everything, pageSize: 50, geometryFormat: "NONE", collapse: "event", ...searchParams(query), ...(from?.token ? { pageToken: from.token } : {}) }, { signal: request.signal }));
+      const rows = [...new Map([...(from?.rows ?? []), ...response.collapsed.map(c => ({ report: c.first.event, match: c.first.match, history: { first: c.first.revision, last: c.lastRevision, lastAt: c.lastObservedAt, matching: c.matchingRevisions } }))].map(row => [row.report.id, row])).values()];
+      return { rows, token: response.nextPageToken, pages: (from?.pages ?? 0) + 1, total: response.totalMatches, since: response.search?.since ?? null };
+    }
     const response = await data(client.listEvents({
       place: state.place, layer: [...kindLayers(kind as ListedKind)], status: ["ACTIVE", "SCHEDULED", "RESOLVED", "EXPIRED"],
       pageSize: 50, geometryFormat: "NONE", ...searchParams(query), ...(from?.token ? { pageToken: from.token } : {}),
@@ -133,9 +151,9 @@ export async function mount(ctx: Context) {
     const answer = !kind && s.result ? finderAnswer(s.result) : undefined;
     const listing = kind ? s.listing : null;
     const empty = answer?.empty && !answer.unsearched ? finderEmpty(s.asked, s.result?.search.since)
-      : kind && listing && !listing.rows.length ? listEmpty(kind, s.asked, listing.since) : undefined;
+      : kind && listing && !listing.rows.length ? (kind === "REVISIONS" ? historyEmpty(s.asked, listing.since) : listEmpty(kind, s.asked, listing.since)) : undefined;
     const status = s.searching ? "Searching…" : s.error ? "Search unavailable"
-      : kind && listing ? matchCount({ ...kindNoun(kind), loaded: listing.rows.length, more: !!listing.token, total: listing.total })
+      : kind && listing ? (kind === "REVISIONS" ? historyCount : (c: { loaded: number; more: boolean; total: number | null }) => matchCount({ ...kindNoun(kind), ...c }))({ loaded: listing.rows.length, more: !!listing.token, total: listing.total })
       : answer?.summary || (empty ? "0 matches" : "");
     return html`
       ${pageHero({ kicker: "Ebbetts Pass corridor", title: "Search", lead: "Find a report, a mesh node, a road, a camera or a scanner feed by name or by words in it." })}
@@ -143,10 +161,10 @@ export async function mount(ctx: Context) {
         ${searchField({ id: "finder-search", label: "Search the corridor", value: s.query, placeholder: "A road, a fire, a node, a camera…", shortcut: "/", onInput: typed })}
       </form>
       <p id="finder-status" class="meta finder-status" role="status">${status}</p>
-      ${kind && s.asked ? html`<p class="finder-scope">${moreLink(scope("", s.asked), "Best matches of every kind")}</p>` : nothing}
+      ${kind && s.asked ? html`<p class="finder-scope">${kind === "REVISIONS" ? html`<strong>Revision history</strong> · ` : nothing}${moreLink(scope("", s.asked), "Best matches of every kind")}</p>` : nothing}
       ${s.error ? callout(s.error, { tone: "brass" }) : nothing}
       ${answer?.unsearched ? callout(answer.unsearched, { tone: "brass" }) : nothing}
-      ${!s.asked && !s.searching && !s.error ? html`<div class="finder-help"><p>Type a road (any way: “hwy 4”, “SR 4”), a fire or a node by name, the start of a node’s public key, or words from a report (“chain control”, “tree work”). Every word must match; put words in quotes to keep them together. Reports are searched whether current or past.</p></div>` : nothing}
+      ${!s.asked && !s.searching && !s.error ? html`<div class="finder-help"><p>Type a road (any way: “hwy 4”, “SR 4”), a fire or a node by name, the start of a node’s public key, or words from a report (“chain control”, “tree work”). Every word must match; put words in quotes to keep them together. Reports are searched whether current or past, as they read now; after a search, “Search in revision history” also looks through every earlier version.</p></div>` : nothing}
       ${empty ? html`<div class="browser-empty"><h2>${empty.title}</h2><p>${empty.body}</p></div>` : nothing}
       ${answer ? html`<div class="finder-results">${repeat(answer.groups, group => group.kind, group => html`
         <section class="finder-group" aria-labelledby=${`finder-${group.kind}`}>
@@ -154,9 +172,10 @@ export async function mount(ctx: Context) {
           <div class="feed">${repeat(group.hits, hit => hit.kind + ":" + hit.id, hitRow)}</div>
           ${group.more && (group.kind === "EVENT" || group.kind === "MESH_NODE") ? html`<p class="finder-group__more">${moreLink(scope(group.kind, s.asked), allOfKind(group.kind, group.total))}</p>` : nothing}
         </section>`)}</div>` : nothing}
+      ${!kind && s.asked && !s.error && !s.searching ? html`<p class="finder-history">${moreLink(scope("REVISIONS", s.asked), "Search in revision history")}<span class="meta">Every stored version of a report, including wording a source has since changed.</span></p>` : nothing}
       ${listing?.rows.length ? html`<div class="finder-results">
         <section class="finder-group" aria-labelledby="finder-listed">
-          <h2 id="finder-listed" class="sr-only">${kind === "MESH_NODE" ? "Mesh nodes" : "Reports"}, newest first</h2>
+          <h2 id="finder-listed" class="sr-only">${kind === "REVISIONS" ? "Reports with a matching revision, latest match first" : `${kind === "MESH_NODE" ? "Mesh nodes" : "Reports"}, newest first`}</h2>
           <div id="finder-list" class="feed">${repeat(listing.rows, row => row.report.id, listRow)}</div>
           <sierra-load-more class="browser-pagination" .props=${{
             // Pages are capped (the URL restores at most MAX_PAGES); past that, more words are the way in.
@@ -164,7 +183,7 @@ export async function mount(ctx: Context) {
             loading: s.loadingMore,
             error: s.pageError || undefined,
             label: "Load more",
-            endLabel: listing.token ? `Showing the newest ${listing.rows.length.toLocaleString("en-US")}. Add a word to narrow the search.` : "All matches loaded.",
+            endLabel: listing.token ? `Showing the first ${listing.rows.length.toLocaleString("en-US")}. Add a word to narrow the search.` : "All matches loaded.",
           } satisfies LoadMoreProps} @load-more=${loadMore}></sierra-load-more>
         </section></div>` : nothing}`;
   }, { signal });

@@ -51,6 +51,32 @@ export function matchCount(s: MatchCount): string {
   return counted + partial + (n > 1 ? " · newest first" : "");
 }
 
+/** The line above a search of the revision history: one row per report, however many of its revisions match. */
+export function historyCount(s: { loaded: number; more: boolean; total: number | null }): string {
+  const n = s.total ?? s.loaded;
+  const counted = `${n.toLocaleString("en-US")} ${n === 1 ? "report has" : "reports have"} a matching revision`;
+  const partial = s.total === null && s.more ? " so far" : s.more ? ` · ${s.loaded.toLocaleString("en-US")} shown` : "";
+  return counted + partial + (n > 1 ? " · latest match first" : "");
+}
+
+/** Which of a report's revisions matched: the first, the last and how many. */
+export function revisionSpan(first: number, last: number, matching: number): string {
+  if (matching <= 1 || first === last) return `Revision ${first} matches`;
+  return `${matching.toLocaleString("en-US")} revisions match, from revision ${first} to revision ${last}`;
+}
+
+/** What an empty search of the revision history may and may not be taken to mean. */
+export function historyEmpty(query: string, since: string | null | undefined) {
+  const from = since && Number.isFinite(Date.parse(since))
+    ? new Date(since).toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "long", day: "numeric", year: "numeric" })
+    : "";
+  return {
+    title: `No revision matches “${query}”`,
+    body: `No stored revision of any report${from ? ` kept since ${from}` : ""} has those words. ` +
+      "Try fewer or other words; a road can be typed any way (“hwy 4”, “SR 4”). Finding nothing does not establish clear conditions.",
+  };
+}
+
 /** Why a search could not be answered. Never rendered as an empty list. */
 export function searchFailure(error: unknown): string {
   const status = typeof error === "object" && error !== null && "status" in error ? Number((error as { status: unknown }).status) : 0;

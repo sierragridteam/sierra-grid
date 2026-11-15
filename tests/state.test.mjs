@@ -97,6 +97,7 @@ test("search keeps its text and, with text, the kind listed in full", () => {
   assert.equal(listed.query, "hwy 4");
   assert.equal(listed.searchKind, "EVENT");
   assert.equal(stateUrl(listed), "/search/?pages=2&q=hwy+4&kind=EVENT");
+  assert.equal(parseState(new URL("https://grid.test/search/?q=x&kind=REVISIONS"), now).searchKind, "REVISIONS");
   // A kind Grid cannot list, or a kind on another page, is dropped.
   assert.equal(parseState(new URL("https://grid.test/search/?q=x&kind=ROAD"), now).searchKind, "");
   assert.equal(parseState(new URL("https://grid.test/events/?kind=EVENT"), now).searchKind, "");

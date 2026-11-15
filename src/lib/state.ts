@@ -17,8 +17,8 @@ export type State = {
   severity?: string;
   /** Search: the text in the box. */
   query?: string;
-  /** Search: "" for the best of every kind, or the one kind listed in full. */
-  searchKind?: "" | "EVENT" | "MESH_NODE";
+  /** Search: "" for the best of every kind, a kind listed in full, or the revision history. */
+  searchKind?: "" | "EVENT" | "MESH_NODE" | "REVISIONS";
   revision?: string;
   browserPages?: number;
   autoSelect?: boolean;
@@ -94,7 +94,7 @@ export function parseState(url: URL, now = Date.now()): State {
     severity: ["INFO", "MINOR", "MODERATE", "SEVERE", "EXTREME"].includes(get("severity")) ? get("severity") : "",
     // The old single-page links kept their whole state as JSON in `q`: that is not search text.
     query: Object.keys(legacy).length ? "" : get("q").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80),
-    searchKind: topic === "search" && (get("kind") === "EVENT" || get("kind") === "MESH_NODE") ? get("kind") as "EVENT" | "MESH_NODE" : "",
+    searchKind: topic === "search" && ["EVENT", "MESH_NODE", "REVISIONS"].includes(get("kind")) ? get("kind") as "EVENT" | "MESH_NODE" | "REVISIONS" : "",
     revision: /^\d{1,12}$/.test(get("revision")) ? get("revision") : "",
     archiveSource: /^[a-zA-Z0-9:_-]{1,80}$/.test(get("archiveSource"))
       ? get("archiveSource")

@@ -125,6 +125,48 @@ test("Search lists every matching report, newest first, with the service's count
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
 });
 
+test("Search in revision history finds reports by any stored version, and opens the revision that matched", async ({ page }) => {
+  const word = await headlineWord(page);
+  const asked: URL[] = [];
+  page.on("request", request => { const url = new URL(request.url()); if (url.pathname === "/api/v1/history") asked.push(url); });
+  await page.goto("/search/?q=" + encodeURIComponent(word)); await ready(page);
+  await expect(page.locator(".finder-history a")).toHaveText(/^Search in revision history/, { timeout: 30000 });
+  await page.locator(".finder-history a").click(); await ready(page);
+  await expect(page).toHaveURL(/\/search\/\?q=[^&]+&kind=REVISIONS$/);
+  await expect(page.locator("#finder-status")).toHaveText(/^[\d,]+ reports? ha(s|ve) a matching revision/, { timeout: 30000 });
+  // One question: every stored revision, one row per report.
+  const last = asked.at(-1)!;
+  expect(last.searchParams.get("q")).toBe(word);
+  expect(last.searchParams.get("qTyping")).toBe("true");
+  expect(last.searchParams.get("collapse")).toBe("event");
+  expect(last.searchParams.get("place")).toBe("ebbetts-pass");
+  const row = page.locator("#finder-list .feed-item").first();
+  await expect(row).toContainText(/Revision \d+ matches|\d+ revisions match, from revision \d+ to revision \d+/);
+  expect((await new AxeBuilder({ page }).include("#content").analyze()).violations).toEqual([]);
+  // The row opens the report at its first matching revision.
+  const href = new URL((await row.locator("a").first().getAttribute("href"))!, page.url());
+  expect(href.pathname).toBe("/events/");
+  expect(href.searchParams.get("record")).toBeTruthy();
+  expect(href.searchParams.get("revision")).toMatch(/^\d+$/);
+  const title = await row.locator("a").first().innerText();
+  await row.locator("a").first().click(); await ready(page);
+  await expect(page.locator("#browser-detail h2")).toHaveText(title, { timeout: 30000 });
+
+  // Nothing in any revision: said as that, and never as clear conditions.
+  await page.goto("/search/?q=zzzz-no-such-report&kind=REVISIONS"); await ready(page);
+  await expect(page.locator(".browser-empty h2")).toHaveText("No revision matches “zzzz-no-such-report”", { timeout: 30000 });
+  await expect(page.locator(".browser-empty")).toContainText("does not establish clear conditions");
+  await expect(page.locator("#finder-status")).toHaveText(/^0 reports have a matching revision/);
+  // A search with no current match still offers the revision history.
+  await page.goto("/search/?q=zzzz-no-such-report"); await ready(page);
+  await expect(page.locator(".browser-empty h2")).toHaveText("Nothing matches “zzzz-no-such-report”", { timeout: 30000 });
+  await expect(page.locator(".finder-history a")).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/search/?q=${encodeURIComponent(word)}&kind=REVISIONS`); await ready(page);
+  await expect(page.locator("#finder-status")).toHaveText(/matching revision/, { timeout: 30000 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+});
+
 test("a list the service cannot answer is an error on the page, never an empty list", async ({ page }) => {
   // The index being rebuilt: 503 for requests with q.
   await page.route(url => url.pathname === "/api/v1/events" && url.searchParams.has("q"), route => route.fulfill({

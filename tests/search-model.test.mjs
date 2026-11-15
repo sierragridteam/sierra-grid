@@ -55,3 +55,20 @@ test("a failed search is explained by its cause, never shown as no results", () 
   assert.match(m.searchFailure(new Error("network")), /could not be answered/);
   assert.match(m.searchFailure(undefined), /could not be answered/);
 });
+
+test("a search of the revision history counts reports, not revisions, and says which revisions matched", () => {
+  assert.equal(m.historyCount({ loaded: 50, more: true, total: 212 }), "212 reports have a matching revision · 50 shown · latest match first");
+  assert.equal(m.historyCount({ loaded: 1, more: false, total: 1 }), "1 report has a matching revision");
+  assert.equal(m.historyCount({ loaded: 0, more: false, total: 0 }), "0 reports have a matching revision");
+  assert.equal(m.historyCount({ loaded: 50, more: true, total: null }), "50 reports have a matching revision so far · latest match first");
+  assert.equal(m.revisionSpan(2, 2, 1), "Revision 2 matches");
+  assert.equal(m.revisionSpan(2, 5, 3), "3 revisions match, from revision 2 to revision 5");
+});
+
+test("an empty revision history search never reads as clear conditions", () => {
+  const e = m.historyEmpty("volcano", "2026-07-07T00:19:16Z");
+  assert.equal(e.title, "No revision matches “volcano”");
+  assert.match(e.body, /^No stored revision of any report kept since July 6, 2026 has those words\./);
+  assert.match(e.body, /does not establish clear conditions\.$/);
+  assert.doesNotMatch(m.historyEmpty("x", null).body, /since/);
+});
