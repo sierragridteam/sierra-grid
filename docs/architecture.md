@@ -71,7 +71,7 @@ including an empty one) searches every stored revision of every report, so
 it finds wording a source has since changed. It asks `/api/v1/history` with
 `q` and `collapse=event`: one row per report, saying which revisions matched
 (first, last, how many), latest match first. A row opens the report in Events
-at its first matching revision. The saved-updates view itself has no text box.
+at its first matching revision. The revisions view on Events itself has no text box.
 
 Nothing is matched in the browser. The text is sent a quarter of a second
 after typing pauses, with `qTyping` so the word being typed matches as a

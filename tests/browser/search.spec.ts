@@ -56,7 +56,7 @@ test("Events filters by type, status and importance and has no text box; text be
   await expect(page.locator("#finder-search")).toHaveValue("zzzz-no-such-report");
 });
 
-test("saved updates have no text box either", async ({ page }) => {
+test("the revisions view has no text box either", async ({ page }) => {
   const period = new URLSearchParams({ time: "fixed", mode: "history", from: new Date(Date.now() - 30 * 86400000).toISOString(), to: new Date(Date.now() + 3600000).toISOString(), selection: "none" });
   await page.goto("/events/?" + period); await ready(page);
   await expect(page.locator(".feed-item").first()).toBeVisible({ timeout: 30000 });

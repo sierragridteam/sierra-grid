@@ -55,7 +55,7 @@ export function reportFeedProps(report: Report, href: string, revision?: Revisio
     title: report.headline || "Untitled report", href,
     severity: { tone: ["SEVERE", "EXTREME"].includes(report.severity) ? "alarm" : report.severity === "MODERATE" ? "elevated" : "muted", label: humanize(report.severity) },
     tags: [typeLabel(report.layer), humanize(report.status)], place: report.areaLabel,
-    when: revision ? `${regionalTime(time)} · Update ${revision.revision}` : closure ? `${regionalTime(closure.plannedStart)} – ${regionalTime(closure.plannedEnd)}` : undefined,
+    when: revision ? `${regionalTime(time)} · Revision ${revision.revision}` : closure ? `${regionalTime(closure.plannedStart)} – ${regionalTime(closure.plannedEnd)}` : undefined,
     received: revision ? undefined : relativeTime(time), receivedAt: time,
     source: (report.provenance.attribution || report.provenance.sourceName || "Source not supplied") + (report.enhancement?.fields.length ? " · Grid summary" : ""),
   };

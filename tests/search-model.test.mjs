@@ -28,7 +28,7 @@ test("the report browser's count line says what is loaded and in what order", ()
   assert.equal(m.countLine({ ...plain, loaded: 50, more: true }), "50 reports loaded · more available · newest received first");
   assert.equal(m.countLine({ ...plain, loaded: 7 }), "7 reports · newest received first");
   assert.equal(m.countLine({ ...plain, loaded: 1 }), "1 report · newest received first");
-  assert.equal(m.countLine({ ...plain, archive: true, loaded: 20 }), "20 saved updates · newest reported first");
+  assert.equal(m.countLine({ ...plain, archive: true, loaded: 20 }), "20 revisions · newest reported first");
   assert.equal(m.countLine({ ...plain, loading: true }), "Loading reports…");
   assert.equal(m.countLine({ ...plain, error: true }), "Reports unavailable");
 });

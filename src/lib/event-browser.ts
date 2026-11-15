@@ -47,7 +47,7 @@ export async function mount(ctx: Context) {
   const key = (entry: Entry) => entry.report.id + ":" + (entry.revision?.revision ?? "latest");
   const day = (entry: Entry) => new Date(entry.revision?.observedAt || entry.revision?.ingestedAt || entry.report.ingestedAt).toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", weekday: "short", month: "short", day: "numeric", year: "numeric" });
   region($("content"), store, s => { const shown = s.entries; return html`
-    <header class="page-header"><div class="page-header__text"><span class="kicker">Ebbetts Pass corridor</span><h1>${title}</h1><p class="lead">${archive ? "Follow reports through time, one saved update at a time." : "Browse source reports. Select one for its location, details and history."}</p></div></header>
+    <header class="page-header"><div class="page-header__text"><span class="kicker">Ebbetts Pass corridor</span><h1>${title}</h1><p class="lead">${archive ? "Follow reports through time, one revision at a time." : "Browse source reports. Select one for its location, details and history."}</p></div></header>
     <div id="browser-period"></div>
     <div class=${`report-browser${s.record ? " has-selection" : ""}`}>
       <section class="browser-results" aria-label="Report results">
@@ -57,18 +57,18 @@ ${allTypes || !archive ? html`        <form class="browser-filters" aria-label="
             ${!archive ? html`${choice("browser-status", "Status", [["current", "Active & scheduled", "Current"], ["ACTIVE", "Active"], ["SCHEDULED", "Scheduled"], ["all", "All statuses"], ["RESOLVED", "Resolved"], ["EXPIRED", "Expired"]], state.eventStatus || "current", "current", "eventStatus")}${choice("browser-severity", "Importance", [["", "Any importance", "Any level"], ["MODERATE", "Moderate or higher", "Moderate +"], ["SEVERE", "Severe or higher", "Severe +"], ["EXTREME", "Extreme"]], state.severity || "", "", "severity")}` : nothing}
           </div>
         </form>` : nothing}
-        <h2 class="sr-only">${archive ? "Saved updates" : "Reports"}</h2><div class="browser-count"><p id="browser-count" class="meta" role="status">${countLine({ loading: s.loading, error: !!s.error, archive, loaded: s.entries.length, more: !!s.token })}</p>${filtered ? html`<button type="button" class="filter-reset" @click=${reset}>Reset</button>` : nothing}</div>
+        <h2 class="sr-only">${archive ? "Revisions" : "Reports"}</h2><div class="browser-count"><p id="browser-count" class="meta" role="status">${countLine({ loading: s.loading, error: !!s.error, archive, loaded: s.entries.length, more: !!s.token })}</p>${filtered ? html`<button type="button" class="filter-reset" @click=${reset}>Reset</button>` : nothing}</div>
         <div id="browser-list" class="feed">${repeat(shown, key, (entry, index) => html`
           ${archive && (index === 0 || day(entry) !== day(shown[index - 1])) ? html`<h3 class="browser-day">${day(entry)}</h3>` : nothing}
           ${feedItem({ ...reportFeedProps(entry.report, reportLink(ctx, entry.report, entry.revision), entry.revision), selected: entry.report.id === s.record && (!s.revision || String(entry.revision?.revision) === s.revision), onSelect: () => select({ record: entry.report.id, revision: entry.revision ? String(entry.revision.revision) : "", selection: "auto" }) })}
         `)}</div>
-        ${s.error ? callout(html`${s.error}<button class="btn btn--outline" data-retry>Retry reports</button>`, { tone: "brass" }) : s.loading || s.entries.length ? nothing : html`<div class="browser-empty"><h2>No ${archive ? "saved updates" : "matching reports"} returned</h2><p>${archive ? "No updates returned for this type and period. This does not establish that nothing happened." : "Try all statuses or browse earlier reports. An empty result does not establish clear conditions."}</p>${archive ? moreLink(destination(false), "Check current reports") : state.eventStatus !== "all" ? moreLink(stateUrl({ ...state, eventStatus: "all", record: "", revision: "", browserPages: 1 }), "Include past reports") : nothing}</div>`}
+        ${s.error ? callout(html`${s.error}<button class="btn btn--outline" data-retry>Retry reports</button>`, { tone: "brass" }) : s.loading || s.entries.length ? nothing : html`<div class="browser-empty"><h2>No ${archive ? "revisions" : "matching reports"} returned</h2><p>${archive ? "No revisions returned for this type and period. This does not establish that nothing happened." : "Try all statuses or browse earlier reports. An empty result does not establish clear conditions."}</p>${archive ? moreLink(destination(false), "Check current reports") : state.eventStatus !== "all" ? moreLink(stateUrl({ ...state, eventStatus: "all", record: "", revision: "", browserPages: 1 }), "Include past reports") : nothing}</div>`}
         ${!s.loading && !s.error && s.entries.length ? html`<sierra-load-more class="browser-pagination" .props=${{
           // Pages are capped (the URL restores at most MAX_PAGES); past that, narrowing is the way in.
           hasMore: !!s.token && s.pages < MAX_PAGES,
           loading: s.loadingMore,
           error: s.pageError || undefined,
-          label: archive ? "Load more updates" : "Load more reports",
+          label: archive ? "Load more revisions" : "Load more reports",
           endLabel: s.token ? `Showing the first ${s.entries.length.toLocaleString()}. Narrow the filters to see others.` : "All matching results loaded.",
         } satisfies LoadMoreProps} @load-more=${loadMore}></sierra-load-more>` : nothing}
       </section>

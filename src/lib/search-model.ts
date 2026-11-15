@@ -24,11 +24,11 @@ export function matchExcerpt(match: Match): MatchPart[] | null {
   return match.parts;
 }
 
-/** The line above the report browser's list (Events, saved updates). */
+/** The line above the report browser's list (Events, and its revisions over a period). */
 export function countLine(s: { loading: boolean; error: boolean; archive: boolean; loaded: number; more: boolean }): string {
   if (s.loading) return "Loading reports…";
   if (s.error) return "Reports unavailable";
-  const noun = s.archive ? (s.loaded === 1 ? "saved update" : "saved updates") : (s.loaded === 1 ? "report" : "reports");
+  const noun = s.archive ? (s.loaded === 1 ? "revision" : "revisions") : (s.loaded === 1 ? "report" : "reports");
   return `${s.loaded.toLocaleString("en-US")} ${noun}${s.more ? " loaded · more available" : ""} · ${s.archive ? "newest reported first" : "newest received first"}`;
 }
 

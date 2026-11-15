@@ -123,7 +123,7 @@ test("departed view cannot overwrite new page after a delayed response", async (
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
 });
 
-test("source reports retain list context and expose source text and saved changes", async ({ page }) => {
+test("source reports retain list context and expose source text and revisions", async ({ page }) => {
   await page.goto("/burn/");
   await ready(page);
   const first = page.locator(".feed-item a").nth(1);

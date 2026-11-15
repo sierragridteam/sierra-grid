@@ -121,7 +121,7 @@ const common = (report: Report, revisions: Revision[], explicit?: number): Entry
   const versions = revisions.length;
   return [
     { at: reportedAt(report, revisions, explicit), label: "Reported", detail: report.provenance.attribution || report.provenance.sourceName || undefined },
-    { at: firstSaved(revisions, report), label: "First saved by Grid", kind: "system", detail: versions > 1 ? `${versions} versions since` : undefined },
+    { at: firstSaved(revisions, report), label: "First saved by Grid", kind: "system", detail: versions > 1 ? `${versions} revisions since` : undefined },
   ];
 };
 

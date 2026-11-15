@@ -66,7 +66,7 @@ export async function mount(ctx: Context) {
       ${stat({ label: "Active events", value: counts ? `${s.partial ? "≥ " : ""}${counts.active}` : "—", sub: counts ? `${counts.scheduled} scheduled separately` : "Waiting for source reports", href: currentUrl("events"), actionLabel: "Browse events" })}
       ${stat({ label: "Mesh nodes heard", value: s.mesh ? s.mesh.nodes.toLocaleString() : "—", sub: s.mesh ? `${s.mesh.links.toLocaleString()} links · last ${s.mesh.window}` : s.meshError ? "Network observations unavailable" : "Reading the network…", href: currentUrl("mesh"), actionLabel: "Inspect the network" })}
       ${stat({ label: "Reports on record", value: s.totals ? s.totals.events.toLocaleString() : s.totalsError ? "—" : "…",
-        sub: s.totals ? `${s.totals.revisions.toLocaleString()} saved updates from ${s.totals.sources} sources${s.totals.since ? ` since ${fmt(s.totals.since).split(",")[0]}` : ""}` : s.totalsError ? "The record's totals are unavailable" : "Counting the record…",
+        sub: s.totals ? `${s.totals.revisions.toLocaleString()} revisions from ${s.totals.sources} sources${s.totals.since ? ` since ${fmt(s.totals.since).split(",")[0]}` : ""}` : s.totalsError ? "The record's totals are unavailable" : "Counting the record…",
         href: stateUrl({ ...ctx.state, ...defaults("events"), topic: "events", layer: "ALL", eventStatus: "all", severity: "", record: "", revision: "", timeExplicit: false }), actionLabel: "Browse every report, past and present" })}
     </div>`;
   }, { signal });
