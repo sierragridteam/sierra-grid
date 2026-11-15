@@ -101,8 +101,12 @@ test("search keeps its text and, with text, the kind listed in full", () => {
   // A kind Grid cannot list, or a kind on another page, is dropped.
   assert.equal(parseState(new URL("https://grid.test/search/?q=x&kind=ROAD"), now).searchKind, "");
   assert.equal(parseState(new URL("https://grid.test/events/?kind=EVENT"), now).searchKind, "");
-  // Without text there is nothing to list.
-  assert.equal(stateUrl({ ...listed, query: "" }), "/search/?pages=2");
+  // Without text there is nothing to list, and the best-of view has no pages.
+  assert.equal(stateUrl({ ...listed, query: "" }), "/search/");
+  assert.equal(stateUrl({ ...listed, searchKind: "" }), "/search/?q=hwy+4");
+  // Leaving Search leaves the text behind: the sidebar's Events link is plain Events.
+  assert.equal(stateUrl(changeView(listed, "events", now)), "/events/");
+  assert.equal(stateUrl(changeView(listed, "roads", now)), "/roads/");
 });
 
 test("an old single-page link's JSON state is not search text", () => {

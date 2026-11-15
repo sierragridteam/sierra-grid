@@ -58,7 +58,7 @@ for a thing are different jobs, and two boxes with different reach were one
 too many.
 
 The Search page (`views/search.ts`, `finder-model.ts`, `search-model.ts`)
-has two views of one box. Without `kind`, it asks `/api/v1/search` for the
+has three views of one box. Without `kind`, it asks `/api/v1/search` for the
 best few hits of each kind Grid has a page for, scoped to the corridor, and
 each hit leads to its page. With `kind=EVENT` or `kind=MESH_NODE` (the "All N
 reports, newest first" link under a group) it lists every match of that kind

@@ -50,8 +50,12 @@ test("browser filters, pagination and historical selection roundtrip without acc
   assert.equal(invalid.browserPages, 20);
 });
 
-test("the search query round-trips through the events URL and is cleaned", () => {
-  const state = parseState(new URL("https://grid.test/events/?q=%20bear%20%00valley%20"));
+test("the search query round-trips through the Search URL and is cleaned", () => {
+  const state = parseState(new URL("https://grid.test/search/?q=%20bear%20%00valley%20"));
   assert.equal(state.query, "bear valley");
   assert.equal(new URL(stateUrl(state), "https://grid.test").searchParams.get("q"), "bear valley");
+  // An old Events link is still read (the page sends it on to Search), but Events never writes one.
+  const old = parseState(new URL("https://grid.test/events/?q=bear"));
+  assert.equal(old.query, "bear");
+  assert.equal(new URL(stateUrl(old), "https://grid.test").searchParams.has("q"), false);
 });

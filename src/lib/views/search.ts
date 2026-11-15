@@ -13,7 +13,7 @@ import { stateUrl } from "../state";
 import { httpUrl } from "../render";
 import { humanize, relativeTime, reportFeedProps, typeLabel, type Report } from "../event-model";
 import { regionalTime } from "../time";
-import { historyCount, historyEmpty, matchCount, matchExcerpt, revisionSpan, searchFailure, searchParams, type Match } from "../search-model";
+import { historyCount, historyEmpty, matchCount, matchExcerpt, revisionSpan, searchFailure, searchParams, MAX_QUERY, type Match } from "../search-model";
 import { allOfKind, finderAnswer, finderEmpty, finderKinds, kindLayers, kindNoun, listEmpty, type ListedKind } from "../finder-model";
 import type { EventQuery, V1SearchHit, V1SearchResults } from "@sierragridteam/sdk";
 import { createStore, region } from "@sierragridteam/design-system/lib/region";
@@ -38,14 +38,17 @@ export async function mount(ctx: Context) {
   defineLoadMore();
   const { state, client, $, signal } = ctx;
   // "" is the best few of every kind; a kind is that kind listed in full.
-  const kind: ListedKind | "REVISIONS" | "" = state.query ? state.searchKind || "" : "";
+  // It needs text: without any, the page is plain Search and the next text asks for the best of every kind.
+  let kind: ListedKind | "REVISIONS" | "" = state.query ? state.searchKind || "" : "";
+  state.searchKind = kind;
+  const current = () => kind;
   const store = createStore({ query: state.query || "", asked: "", searching: false, error: "", result: null as V1SearchResults | null, listing: null as Listing | null, loadingMore: false, pageError: "" });
 
   // Where each kind of hit lives in Grid.
-  const page = (topic: "roads" | "cameras" | "scanners") => stateUrl({ ...state, topic, layer: "ALL", query: "", searchKind: "", record: "", revision: "", browserPages: 1, timeExplicit: false });
+  const page = (topic: "roads" | "cameras" | "scanners") => stateUrl({ ...state, topic, layer: "ALL", eventStatus: "current", severity: "", query: "", searchKind: "", record: "", revision: "", browserPages: 1, autoSelect: true, timeExplicit: false });
   const report = (id: string, mesh: boolean) => stateUrl({ ...state, topic: "events", layer: mesh ? "MESH" : "ALL", eventStatus: "all", severity: "", query: "", searchKind: "", record: id, revision: "", browserPages: 1, autoSelect: true, timeExplicit: false });
   const revision = (id: string, n: number) => stateUrl({ ...state, topic: "events", layer: "ALL", eventStatus: "all", severity: "", query: "", searchKind: "", record: id, revision: String(n), browserPages: 1, autoSelect: true, timeExplicit: false });
-  const scope = (to: ListedKind | "REVISIONS" | "", query: string) => stateUrl({ ...state, query, searchKind: to, browserPages: 1 });
+  const scope = (to: ListedKind | "REVISIONS" | "", query: string) => stateUrl({ ...state, query, searchKind: to, browserPages: 1, autoSelect: true, eventStatus: "current", severity: "" });
   const excerpt = (match: Match) => {
     const parts = matchExcerpt(match);
     return parts ? html`<p class="feed-item__match">${parts.map(part => part.hit ? html`<mark>${part.text}</mark>` : part.text)}</p>` : nothing;
@@ -72,16 +75,18 @@ export async function mount(ctx: Context) {
     const mesh = row.report.layer === "MESH";
     if (row.history) {
       // The report as it read at its first matching revision, opened at that revision.
+      // Its severity and status were that revision's, not today's, so the row leaves them out.
       const h = row.history, props = reportFeedProps(row.report, revision(row.report.id, h.first));
-      return feedItem({ ...props, received: undefined, receivedAt: undefined, when: `${revisionSpan(h.first, h.last, h.matching)} · ${h.last === h.first ? "" : "last "}${regionalTime(h.lastAt)}` }, excerpt(row.match));
+      return feedItem({ ...props, severity: undefined, tags: [typeLabel(row.report.layer)], received: undefined, receivedAt: undefined, when: `${revisionSpan(h.first, h.last, h.matching)} · ${h.last === h.first ? "" : "last "}${regionalTime(h.lastAt)}` }, excerpt(row.match));
     }
     const props = reportFeedProps(row.report, report(row.report.id, mesh));
     return feedItem(mesh ? { ...props, severity: undefined, tags: [humanize(row.report.category || "node"), humanize(row.report.status)] } : props, excerpt(row.match));
   }
 
-  // The revision history is searched whole: from before Grid kept anything to now (fixed at
-  // mount, so every page of one list asks about the same span).
-  const everything = { from: "2020-01-01T00:00:00.000Z", to: new Date(Date.now() + 3600000).toISOString() };
+  // The revision history is searched whole: from before Grid kept anything to now. "Now" is
+  // taken at each new question, so every page of one list asks about the same span.
+  const span = () => ({ from: "1970-01-01T00:00:00.000Z", to: new Date(Date.now() + 3600000).toISOString() });
+  let everything = span();
   let run = 0, request = new AbortController(), timer = 0;
   signal.addEventListener("abort", () => { request.abort(); clearTimeout(timer); });
   /** One more page of the full list, onto `from` (nothing, for a new question). */
@@ -103,14 +108,21 @@ export async function mount(ctx: Context) {
   async function ask(pages = 1) {
     const query = (state.query || "").trim(), mine = ++run;
     request.abort(); request = new AbortController();
-    if (!query) return void store.set({ asked: "", searching: false, error: "", result: null, listing: null, pageError: "" });
-    store.set({ searching: true, error: "", pageError: "" });
+    everything = span();
+    // What the URL says is loaded follows what this question loads.
+    const loaded = (n: number) => { state.browserPages = n; history.replaceState(history.state, "", stateUrl(state)); };
+    if (!query) {
+      kind = ""; state.searchKind = ""; loaded(1);
+      return void store.set({ asked: "", searching: false, error: "", result: null, listing: null, loadingMore: false, pageError: "" });
+    }
+    store.set({ searching: true, error: "", loadingMore: false, pageError: "" });
     try {
       if (kind) {
         let listing = await listPage(query, null);
         while (listing.token && listing.pages < pages && !signal.aborted && mine === run) listing = await listPage(query, listing);
         if (signal.aborted || mine !== run) return;
         store.set({ asked: query, searching: false, listing });
+        loaded(listing.pages);
       } else {
         const result = await data(client.search({ q: query, qTyping: true, place: state.place, kind: [...finderKinds], limit: PER_KIND }, { signal: request.signal }));
         if (signal.aborted || mine !== run) return;
@@ -119,12 +131,14 @@ export async function mount(ctx: Context) {
     } catch (error) {
       if (signal.aborted || mine !== run) return;
       // Not answered is an error on the page, never "nothing matches".
-      store.set({ asked: query, searching: false, result: null, listing: null, error: searchFailure(error) });
+      store.set({ asked: query, searching: false, result: null, listing: null, error: searchFailure(error, query) });
+      loaded(1);
     }
   }
   async function loadMore() {
+    // Not while a new question is out or about to be: the rows on screen answer the old text.
     const s = store.get(), mine = run;
-    if (s.loadingMore || !s.listing?.token) return;
+    if (s.loadingMore || s.searching || !s.listing?.token || s.query.trim() !== s.asked) return;
     store.set({ loadingMore: true, pageError: "" });
     try {
       const listing = await listPage(s.asked, s.listing);
@@ -133,12 +147,14 @@ export async function mount(ctx: Context) {
       state.browserPages = listing.pages;
       history.replaceState(history.state, "", stateUrl(state));
     } catch { if (!signal.aborted && mine === run) store.set({ pageError: "More could not load. Try again; the results shown are kept." }); }
-    finally { if (!signal.aborted) store.set({ loadingMore: false }); }
+    finally { if (!signal.aborted && mine === run) store.set({ loadingMore: false }); }
   }
   const typed = (query: string) => {
     store.set({ query });
-    state.query = query.trim();
+    state.query = query.trim().slice(0, MAX_QUERY);
     state.browserPages = 1;
+    // A page still loading for the old text is no longer wanted.
+    run++; request.abort(); request = new AbortController();
     clearTimeout(timer);
     timer = window.setTimeout(() => {
       if (signal.aborted) return;
@@ -148,6 +164,7 @@ export async function mount(ctx: Context) {
   };
 
   region($("content"), store, s => {
+    const kind = current();
     const answer = !kind && s.result ? finderAnswer(s.result) : undefined;
     const listing = kind ? s.listing : null;
     const empty = answer?.empty && !answer.unsearched ? finderEmpty(s.asked, s.result?.search.since)

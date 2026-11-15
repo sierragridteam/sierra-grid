@@ -53,7 +53,7 @@ test("a total the service left out or under-reported never undercounts what is s
 test("nothing found says what was searched and never that conditions are clear", () => {
   const e = m.finderEmpty("volcano", "2026-07-07T00:19:16Z");
   assert.equal(e.title, "Nothing matches “volcano”");
-  assert.match(e.body, /^No report kept since July 6, 2026, mesh node, road, camera or scanner feed in the corridor/);
+  assert.match(e.body, /^No report kept since July 6, 2026, mesh node, road, camera or scanner feed has those words/);
   assert.match(e.body, /does not establish clear conditions\.$/);
   assert.doesNotMatch(m.finderEmpty("x", null).body, /since/);
 });
@@ -66,6 +66,8 @@ test("reports and mesh nodes can be listed in full; the link says how many and i
   assert.deepEqual([...m.kindLayers("MESH_NODE")], ["MESH"]);
   assert.equal(m.kindLayers("EVENT").includes("MESH"), false);
   assert.equal(m.kindLayers("EVENT").includes("ROAD_INCIDENT"), true);
+  // Every layer the service counts as a report, or the link's total and the list would differ.
+  assert.deepEqual([...m.kindLayers("EVENT")].sort(), ["BURN_STATUS", "EARTHQUAKE", "EVACUATION", "POWER", "ROAD_INCIDENT", "WEATHER_ALERT", "WILDFIRE"]);
   assert.deepEqual(m.kindNoun("MESH_NODE"), { one: "mesh node", many: "mesh nodes" });
 });
 

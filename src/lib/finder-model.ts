@@ -30,7 +30,9 @@ export const kindNoun = (kind: FinderKind) => ({ one: names[kind].one, many: nam
  */
 export const listedKinds = ["EVENT", "MESH_NODE"] as const;
 export type ListedKind = (typeof listedKinds)[number];
-const reportLayers = ["WILDFIRE", "ROAD_INCIDENT", "WEATHER_ALERT", "POWER", "EVACUATION", "BURN_STATUS"] as const;
+// Every layer but the mesh, as the service's EVENT kind counts them: the link's total and
+// the list it opens must be the same set.
+const reportLayers = ["WILDFIRE", "EVACUATION", "WEATHER_ALERT", "EARTHQUAKE", "ROAD_INCIDENT", "POWER", "BURN_STATUS"] as const;
 /** The layers a listed kind covers: a mesh node is a report on the mesh layer. */
 export const kindLayers = (kind: ListedKind) => kind === "MESH_NODE" ? ["MESH"] as const : reportLayers;
 /** The link from the best few to the full list. */
@@ -102,7 +104,7 @@ export function finderEmpty(query: string, since: string | null | undefined) {
   const from = keptSince(since);
   return {
     title: `Nothing matches “${query}”`,
-    body: `No report${from ? ` kept since ${from}` : ""}, mesh node, road, camera or scanner feed in the corridor has those words. ` +
+    body: `No report${from ? ` kept since ${from}` : ""}, mesh node, road, camera or scanner feed has those words. ` +
       "Try fewer or other words; a road can be typed any way (“hwy 4”, “SR 4”). Finding nothing does not establish clear conditions.",
   };
 }

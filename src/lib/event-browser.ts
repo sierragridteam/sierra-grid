@@ -28,7 +28,9 @@ export async function mount(ctx: Context) {
   const { state, $, signal, client } = ctx;
   // History was folded into Events (its status filter covers past reports); old links land there.
   // Text search has its own page; a link to Events that carries text lands there.
-  if (state.query) return void navigate(stateUrl({ ...state, topic: "search", layer: "ALL", eventStatus: "current", severity: "", record: "", revision: "", mode: "now", timeExplicit: false, browserPages: 1 }), { replace: true });
+  // One that also names a report opens that report here, without the text: the report was the point.
+  if (state.query && !state.record) return void navigate(stateUrl({ ...state, topic: "search", searchKind: state.mode === "history" ? "REVISIONS" : "", layer: "ALL", eventStatus: "current", severity: "", revision: "", mode: "now", timeExplicit: false, browserPages: 1, autoSelect: true }), { replace: true });
+  if (state.query) { state.query = ""; history.replaceState(history.state, "", stateUrl(state)); }
   if (state.topic === "changes") return void navigate(stateUrl({ ...state, topic: "events", ...defaults("events"), mode: "now", eventStatus: state.record ? state.eventStatus : "all", timeExplicit: false }), { replace: true });
   const archive = state.mode === "history";
   const allTypes = state.topic === "events";

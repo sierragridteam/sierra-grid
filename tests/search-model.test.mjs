@@ -51,6 +51,10 @@ test("without a total the count claims only what is loaded", () => {
 test("a failed search is explained by its cause, never shown as no results", () => {
   assert.match(m.searchFailure({ status: 503 }), /index is being rebuilt/);
   assert.match(m.searchFailure({ status: 400 }), /nothing to look for/);
+  // The service's other 400: too many words or characters. Saying "nothing to look for" would be false.
+  assert.match(m.searchFailure({ status: 400 }, Array(17).fill("word").join(" ")), /too long\. Use at most 16 words \(200 characters\)/);
+  assert.match(m.searchFailure({ status: 400 }, "x".repeat(201)), /too long/);
+  assert.match(m.searchFailure({ status: 400 }, "the"), /nothing to look for/);
   assert.match(m.searchFailure({ status: 503 }), /pages in the sidebar are unaffected/);
   assert.match(m.searchFailure(new Error("network")), /could not be answered/);
   assert.match(m.searchFailure(undefined), /could not be answered/);

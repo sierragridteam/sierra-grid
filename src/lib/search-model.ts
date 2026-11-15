@@ -9,6 +9,10 @@
 export type MatchPart = { text: string; hit: boolean };
 export type Match = { field: string; parts: MatchPart[] } | null | undefined;
 
+/** The service's limits on a query (sierra-data `internal/search/query.go`). */
+export const MAX_QUERY = 200, MAX_TERMS = 16;
+const tooLong = (query: string) => new TextEncoder().encode(query).length > MAX_QUERY || query.trim().split(/\s+/).length > MAX_TERMS;
+
 /** A search box is typed into: its last word also matches as a prefix. */
 export const searchParams = (query: string | undefined) => {
   const q = (query || "").trim();
@@ -78,8 +82,10 @@ export function historyEmpty(query: string, since: string | null | undefined) {
 }
 
 /** Why a search could not be answered. Never rendered as an empty list. */
-export function searchFailure(error: unknown): string {
+export function searchFailure(error: unknown, query = ""): string {
   const status = typeof error === "object" && error !== null && "status" in error ? Number((error as { status: unknown }).status) : 0;
+  // The service refuses a search for two reasons; which one is plain from the text.
+  if (status === 400 && tooLong(query)) return `That search is too long. Use at most ${MAX_TERMS} words (${MAX_QUERY} characters).`;
   if (status === 400) return "That search has nothing to look for. Type at least one whole word; words like “the” do not count.";
   if (status === 503) return "Search is not available at the moment (its index is being rebuilt). The pages in the sidebar are unaffected. Try again shortly.";
   return "The search could not be answered. Your text is kept; try again shortly.";
