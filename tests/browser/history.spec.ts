@@ -165,6 +165,16 @@ test("the overview shows highway message signs instead of camera stills", async 
   if (await signs.count()) await expect(signs.first().locator(".message-sign__face")).toHaveAttribute("aria-label", /^Sign (reads|is blank)|not in service/);
 });
 
+test("the overview ends with who runs The Grid and how to support it", async ({ page }) => {
+  await page.goto("/"); await ready(page);
+  const about = page.locator("#overview-about");
+  await expect(about.locator(".card--panel")).toHaveCount(2);
+  await expect(about.getByRole("link", { name: "Visit sierragridteam.org" })).toHaveAttribute("href", "https://sierragridteam.org/");
+  await expect(about.getByRole("link", { name: "Donate to S.I.E.R.R.A" })).toHaveAttribute("href", "https://sierragridteam.org/donate");
+  // Last on the page: nothing the page loads later lands below it.
+  expect(await about.evaluate(el => el.parentElement?.lastElementChild === el)).toBe(true);
+});
+
 test("the report list loads the next page as its end scrolls into reach", async ({ page }) => {
   await page.goto("/events/?status=all"); await ready(page);
   const rows = page.locator("#browser-list .feed-item");

@@ -3,6 +3,7 @@ import ExplorerLayout from "../layouts/ExplorerLayout.astro";
 import SummaryBanner from "@sierragridteam/design-system/components/SummaryBanner.astro";
 import Card from "@sierragridteam/design-system/components/Card.astro";
 import MoreLink from "@sierragridteam/design-system/components/MoreLink.astro";
+import Button from "@sierragridteam/design-system/components/Button.astro";
 import { views } from "../config/views";
 ---
 <ExplorerLayout view={views[0]}>
@@ -18,6 +19,17 @@ import { views } from "../config/views";
       <div id="overview-weather-panel" class="grid-panel-slot"><Card variant="panel" title="Weather" kicker="Looking ahead"><MoreLink slot="actions" href="/weather/" text="Forecast" /><p>Loading the regional forecast…</p></Card></div>
     </div>
     <section aria-labelledby="overview-signs-title"><header class="section-header"><h2 id="overview-signs-title">Highway signs</h2><MoreLink href="/roads/" text="Roads" /><p>What Caltrans message signs on corridor routes are showing now.</p></header><div id="overview-signs"><p>Reading highway signs…</p></div></section>
+    <div class="columns" id="overview-about">
+      <Card variant="panel" title="What The Grid is" kicker="About">
+        <p>The Grid gathers public reports on roads, weather, wildfires and power for the Ebbetts Pass corridor, with readings from the SIERRA mesh network, and keeps each version of a report so you can see what changed and when.</p>
+        <p>It is built and run by S.I.E.R.R.A, the Signal Integrity &amp; Emergency Radio Response Alliance: an all-volunteer non-profit building off-grid emergency communications for the Calaveras &amp; Tuolumne foothills.</p>
+        <p><Button variant="outline" href="https://sierragridteam.org/">Visit sierragridteam.org</Button></p>
+      </Card>
+      <Card variant="panel" title="Help keep the foothills connected" kicker="Support this work">
+        <p>S.I.E.R.R.A runs on volunteers and donations. Your support funds the solar-powered relays, radios and training that keep neighbors and first responders connected when the grid and cell service are down.</p>
+        <p><Button href="https://sierragridteam.org/donate">Donate to S.I.E.R.R.A</Button></p>
+      </Card>
+    </div>
   </div>
   <noscript>Live regional observations require JavaScript.</noscript>
 </ExplorerLayout>
