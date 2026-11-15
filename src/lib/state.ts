@@ -15,8 +15,10 @@ export type State = {
   timeExplicit: boolean;
   eventStatus?: string;
   severity?: string;
-  /** Events: text typed in the search field; narrows the loaded reports. */
+  /** Search: the text in the box. */
   query?: string;
+  /** Search: "" for the best of every kind, or the one kind listed in full. */
+  searchKind?: "" | "EVENT" | "MESH_NODE";
   revision?: string;
   browserPages?: number;
   autoSelect?: boolean;
@@ -90,7 +92,9 @@ export function parseState(url: URL, now = Date.now()): State {
     browserPages: Math.max(1, Math.min(20, Number(get("pages")) || 1)),
     eventStatus: ["current", "all", "ACTIVE", "SCHEDULED", "RESOLVED", "EXPIRED"].includes(get("status")) ? get("status") : "current",
     severity: ["INFO", "MINOR", "MODERATE", "SEVERE", "EXTREME"].includes(get("severity")) ? get("severity") : "",
-    query: get("q").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80),
+    // The old single-page links kept their whole state as JSON in `q`: that is not search text.
+    query: Object.keys(legacy).length ? "" : get("q").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80),
+    searchKind: topic === "search" && (get("kind") === "EVENT" || get("kind") === "MESH_NODE") ? get("kind") as "EVENT" | "MESH_NODE" : "",
     revision: /^\d{1,12}$/.test(get("revision")) ? get("revision") : "",
     archiveSource: /^[a-zA-Z0-9:_-]{1,80}$/.test(get("archiveSource"))
       ? get("archiveSource")
@@ -139,7 +143,7 @@ export function changeView(
     revision: "",
     browserPages: 1,
     autoSelect: true,
-    ...(topic !== state.topic ? { preview: "", archiveSource: "", archiveSearch: "", eventStatus: "current", severity: "", layer: "ALL" } : {}),
+    ...(topic !== state.topic ? { searchKind: "" as const, preview: "", archiveSource: "", archiveSearch: "", eventStatus: "current", severity: "", layer: "ALL" } : {}),
     ...(!state.timeExplicit ? defaults(topic, now) : {}),
   };
 }
@@ -158,6 +162,7 @@ export function stateUrl(state: State): string {
   if (state.browserPages && state.browserPages > 1) q.set("pages", String(state.browserPages));
   if (state.eventStatus && state.eventStatus !== "current") q.set("status", state.eventStatus);
   if (state.query && ["events", "changes", "search"].includes(state.topic)) q.set("q", state.query);
+  if (state.searchKind && state.query && state.topic === "search") q.set("kind", state.searchKind);
   if (state.timeExplicit) q.set("time", "fixed");
   for (const k of [
     "node",

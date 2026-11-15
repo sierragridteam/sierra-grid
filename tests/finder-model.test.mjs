@@ -57,3 +57,22 @@ test("nothing found says what was searched and never that conditions are clear",
   assert.match(e.body, /does not establish clear conditions\.$/);
   assert.doesNotMatch(m.finderEmpty("x", null).body, /since/);
 });
+
+test("reports and mesh nodes can be listed in full; the link says how many and in what order", () => {
+  assert.deepEqual([...m.listedKinds], ["EVENT", "MESH_NODE"]);
+  assert.equal(m.allOfKind("EVENT", 1234), "All 1,234 reports, newest first");
+  assert.equal(m.allOfKind("MESH_NODE", 7), "All 7 mesh nodes, newest first");
+  // A mesh node is a report on the mesh layer; the reports list never mixes the two.
+  assert.deepEqual([...m.kindLayers("MESH_NODE")], ["MESH"]);
+  assert.equal(m.kindLayers("EVENT").includes("MESH"), false);
+  assert.equal(m.kindLayers("EVENT").includes("ROAD_INCIDENT"), true);
+  assert.deepEqual(m.kindNoun("MESH_NODE"), { one: "mesh node", many: "mesh nodes" });
+});
+
+test("an empty full list says past reports were searched too, and never that conditions are clear", () => {
+  const e = m.listEmpty("EVENT", "volcano", "2026-07-07T00:19:16Z");
+  assert.equal(e.title, "No report matches “volcano”");
+  assert.match(e.body, /^No report, current or past, kept since July 6, 2026 has those words\./);
+  assert.match(e.body, /does not establish clear conditions\.$/);
+  assert.match(m.listEmpty("MESH_NODE", "x", null).body, /^No mesh node has those words\./);
+});
