@@ -114,7 +114,9 @@ export async function mount(ctx: Context) {
   async function load() {
     const layers = layer === "ALL" ? undefined : [layer] as EventQuery["layer"];
     if (archive) {
-      const response = await data(client.listHistory({ place: state.place, layer: layers, from: state.from, to: state.to, pageSize: 50, geometryFormat: "NONE", ...(token ? { pageToken: token } : {}) } as any));
+      // The archive takes no geometryFormat=NONE (only the events list does): asking for it is a 400,
+      // which left this view saying reports could not be retrieved. Pages stop at about 3 MiB anyway.
+      const response = await data(client.listHistory({ place: state.place, layer: layers, from: state.from, to: state.to, pageSize: 50, ...(token ? { pageToken: token } : {}) }));
       if (signal.aborted) return;
       entries.push(...response.revisions.map(revision => ({ report: revision.event, revision }))); token = response.nextPageToken;
     } else {

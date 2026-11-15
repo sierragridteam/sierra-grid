@@ -219,3 +219,16 @@ test("search narrows the loaded reports, combines with filters, survives a reloa
   await page.setViewportSize({ width: 412, height: 915 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
 });
+
+test("the saved-updates view lists what was saved in its period", async ({ page }) => {
+  // A fixed period ending now: the last three days of saved updates.
+  const period = new URLSearchParams({ time: "fixed", mode: "history", from: new Date(Date.now() - 3 * 86400000).toISOString(), to: new Date(Date.now() + 3600000).toISOString(), selection: "none" });
+  const failed: string[] = [];
+  page.on("response", response => { const url = new URL(response.url()); if (url.pathname === "/api/v1/history" && !response.ok()) failed.push(`${response.status()} ${url.search}`); });
+  await page.goto("/events/?" + period); await ready(page);
+  expect(failed, "the archive answered every request").toEqual([]);
+  await expect(page.locator("#content .callout")).toHaveCount(0);
+  await expect(page.locator(".feed-item").first()).toBeVisible({ timeout: 30000 });
+  await expect(page.locator("#browser-count")).toContainText("saved updates");
+  await expect(page.locator(".browser-day").first()).toBeVisible();
+});
