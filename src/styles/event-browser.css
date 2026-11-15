@@ -10,6 +10,10 @@
 .browser-count p { margin: 0; min-width: 0; }
 .browser-count .filter-reset { flex: none; }
 .browser-day { padding-block: var(--space-4) var(--space-2); }
+/* Where a search matched in the report's own text. The matched words carry weight and ink, not a
+   highlighter colour: the row already has a severity badge to do the shouting. */
+.feed-item__match { margin: var(--space-1) 0 0; color: var(--ink-secondary); font-size: var(--fs-small); overflow-wrap: anywhere; }
+.feed-item__match mark { background: none; color: var(--ink-strong); font-weight: var(--fw-semibold); }
 .browser-empty { padding-block: var(--space-6); max-width: 42rem; }
 /* One rhythm for the selected report: header, summary, map, then ruled sections. */
 .report-detail { display: grid; gap: var(--space-5); min-width: 0; }

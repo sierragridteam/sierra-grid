@@ -9,18 +9,6 @@ export const eventTypes = [
   ["WEATHER_ALERT", "Weather notices"], ["POWER", "Power"], ["EVACUATION", "Evacuations"],
   ["BURN_STATUS", "Burn day"], ["MESH", "Mesh"],
 ] as const;
-/**
- * Text search over what a reader sees of a report: its headline, summary,
- * place, type and source. Every word typed must appear somewhere (in any
- * order, any case). An empty query matches everything.
- */
-export function matchesQuery(report: Report, query: string): boolean {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return true;
-  const text = [report.headline, report.summary, report.areaLabel, typeLabel(report.layer), report.provenance?.attribution, report.provenance?.sourceName]
-    .filter(Boolean).join(" \n ").toLowerCase();
-  return words.every(word => text.includes(word));
-}
 export const severityRank: Record<string, number> = { EXTREME: 4, SEVERE: 3, MODERATE: 2, MINOR: 1, INFO: 0 };
 export const typeLabel = (type: string) => eventTypes.find(([id]) => id === type)?.[1] || humanize(type);
 export function humanize(value: string) {

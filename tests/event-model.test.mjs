@@ -50,17 +50,6 @@ test("browser filters, pagination and historical selection roundtrip without acc
   assert.equal(invalid.browserPages, 20);
 });
 
-test("search matches every word across what the reader sees, and an empty query matches all", async () => {
-  const { matchesQuery } = await import("../src/lib/event-model.ts");
-  const report = { headline: "Hwy 4 chains required, Tamarack to Mount Reba Road (R2)", summary: "", areaLabel: "Bear Valley", layer: "ROAD_INCIDENT", provenance: { attribution: "Caltrans", sourceName: "caltrans-cc" } };
-  assert.equal(matchesQuery(report, ""), true);
-  assert.equal(matchesQuery(report, "   "), true);
-  assert.equal(matchesQuery(report, "CHAINS tamarack"), true);
-  assert.equal(matchesQuery(report, "bear valley caltrans"), true);
-  assert.equal(matchesQuery(report, "roads"), true);
-  assert.equal(matchesQuery(report, "chains sonora"), false);
-});
-
 test("the search query round-trips through the events URL and is cleaned", () => {
   const state = parseState(new URL("https://grid.test/events/?q=%20bear%20%00valley%20"));
   assert.equal(state.query, "bear valley");
