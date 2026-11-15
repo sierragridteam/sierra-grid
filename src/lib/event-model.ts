@@ -9,18 +9,6 @@ export const eventTypes = [
   ["WEATHER_ALERT", "Weather notices"], ["POWER", "Power"], ["EVACUATION", "Evacuations"],
   ["BURN_STATUS", "Burn day"], ["MESH", "Mesh"],
 ] as const;
-/**
- * Text search over what a reader sees of a report: its headline, summary,
- * place, type and source. Every word typed must appear somewhere (in any
- * order, any case). An empty query matches everything.
- */
-export function matchesQuery(report: Report, query: string): boolean {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return true;
-  const text = [report.headline, report.summary, report.areaLabel, typeLabel(report.layer), report.provenance?.attribution, report.provenance?.sourceName]
-    .filter(Boolean).join(" \n ").toLowerCase();
-  return words.every(word => text.includes(word));
-}
 export const severityRank: Record<string, number> = { EXTREME: 4, SEVERE: 3, MODERATE: 2, MINOR: 1, INFO: 0 };
 export const typeLabel = (type: string) => eventTypes.find(([id]) => id === type)?.[1] || humanize(type);
 export function humanize(value: string) {
@@ -67,7 +55,7 @@ export function reportFeedProps(report: Report, href: string, revision?: Revisio
     title: report.headline || "Untitled report", href,
     severity: { tone: ["SEVERE", "EXTREME"].includes(report.severity) ? "alarm" : report.severity === "MODERATE" ? "elevated" : "muted", label: humanize(report.severity) },
     tags: [typeLabel(report.layer), humanize(report.status)], place: report.areaLabel,
-    when: revision ? `${regionalTime(time)} · Update ${revision.revision}` : closure ? `${regionalTime(closure.plannedStart)} – ${regionalTime(closure.plannedEnd)}` : undefined,
+    when: revision ? `${regionalTime(time)} · Revision ${revision.revision}` : closure ? `${regionalTime(closure.plannedStart)} – ${regionalTime(closure.plannedEnd)}` : undefined,
     received: revision ? undefined : relativeTime(time), receivedAt: time,
     source: (report.provenance.attribution || report.provenance.sourceName || "Source not supplied") + (report.enhancement?.fields.length ? " · Grid summary" : ""),
   };

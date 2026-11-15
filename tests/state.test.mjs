@@ -91,3 +91,25 @@ test("Grid always queries the corridor and removes arbitrary API place scope fro
     false,
   );
 });
+
+test("search keeps its text and, with text, the kind listed in full", () => {
+  const listed = parseState(new URL("https://grid.test/search/?q=hwy+4&kind=EVENT&pages=2"), now);
+  assert.equal(listed.query, "hwy 4");
+  assert.equal(listed.searchKind, "EVENT");
+  assert.equal(stateUrl(listed), "/search/?pages=2&q=hwy+4&kind=EVENT");
+  assert.equal(parseState(new URL("https://grid.test/search/?q=x&kind=REVISIONS"), now).searchKind, "REVISIONS");
+  // A kind Grid cannot list, or a kind on another page, is dropped.
+  assert.equal(parseState(new URL("https://grid.test/search/?q=x&kind=ROAD"), now).searchKind, "");
+  assert.equal(parseState(new URL("https://grid.test/events/?kind=EVENT"), now).searchKind, "");
+  // Without text there is nothing to list, and the best-of view has no pages.
+  assert.equal(stateUrl({ ...listed, query: "" }), "/search/");
+  assert.equal(stateUrl({ ...listed, searchKind: "" }), "/search/?q=hwy+4");
+  // Leaving Search leaves the text behind: the sidebar's Events link is plain Events.
+  assert.equal(stateUrl(changeView(listed, "events", now)), "/events/");
+  assert.equal(stateUrl(changeView(listed, "roads", now)), "/roads/");
+});
+
+test("an old single-page link's JSON state is not search text", () => {
+  const q = encodeURIComponent(JSON.stringify({ topic: "events" }));
+  assert.equal(parseState(new URL("https://grid.test/?q=" + q), now).query, "");
+});

@@ -45,7 +45,7 @@ const groupFields = (fields: [string, string][]) => {
   // Ungrouped details first, then named groups; empty groups disappear.
   return [...groups].filter(([, items]) => items.length);
 };
-/** Recent updates show in full; older ones fold away (a mesh node can have hundreds). */
+/** Recent revisions show in full; older ones fold away (a mesh node can have hundreds). */
 const recentUpdates = 5;
 /** A titled card grouping one section of the report. */
 const block = (title: string, body: unknown, actions?: unknown) => html`<section class="card report-block">${actions ? html`<div class="report-block__head"><h3>${title}</h3>${actions}</div>` : html`<h3>${title}</h3>`}${body}</section>`;
@@ -112,13 +112,13 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     return html`<div class="report-detail">
       ${recordHeader({
         badges: [{ label: humanize(report.severity), tone: severityTone(report.severity) }, { label: humanize(report.status), dot: false }],
-        tags: [typeLabel(report.layer), ...(s.revision ? ["Saved version"] : [])],
+        tags: [typeLabel(report.layer), ...(s.revision ? [`Revision ${s.revision}`] : [])],
         title: (report.headline || "Untitled report").replace(/\.$/, ""),
         subtitle: profile?.subtitle ? [profile.subtitle, nearPlace(report.areaLabel)].filter(Boolean).join(" · ") : report.areaLabel || undefined,
         meta: [attribution, profile?.when ?? (reported ? `Reported ${fmt(reported.datetime)}` : "Report time not supplied"), ...(profile?.identifiers ?? [])].join(" · "),
         actions: close ? closeLink(close.href(), { label: "Close report", onClose: close.onClose }) : undefined,
       })}
-      ${s.revision ? html`<p class="report-history-label">Saved version ${s.revision}. This describes the report then, not a current alert.</p>` : nothing}
+      ${s.revision ? html`<p class="report-history-label">Revision ${s.revision}. This describes the report then, not a current alert.</p>` : nothing}
       ${profile?.stats.length ? html`<div class="stats stats--compact">${profile.stats.map(item => stat({ label: item.label, value: item.value, sub: item.progress ? undefined : item.sub, extra: item.progress ? progress({ value: item.progress.value, label: item.label, text: item.progress.text }) : undefined }))}</div>` : nothing}
       ${hasMain ? html`<div class="columns columns--wide-narrow report-columns">
         <div class="report-main">
@@ -128,15 +128,15 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
         </div>
         <aside class="report-aside" aria-label="Measurements, timeline and original report">${telemetryCard}${timelineCard}${relatedCard}${originalCard}</aside>
       </div>` : html`<div class="columns report-columns" aria-label="Timeline and original report">${telemetryCard}${timelineCard}${relatedCard}${originalCard}</div>`}
-      <section class="report-section report-history" id="report-versions"><h3>Version history</h3>
-        ${s.revision ? html`<p class="meta">Complete saved history, including updates after this selected version.</p>` : nothing}
+      <section class="report-section report-history" id="report-versions"><h3>Revision history</h3>
+        ${s.revision ? html`<p class="meta">Complete revision history, including revisions after the selected one.</p>` : nothing}
         <div class="report-versions">${repeat(ordered.slice(0, recentUpdates), revision => revision.revision, version)}</div>
         ${ordered.length > recentUpdates ? html`<details class="report-older" ?open=${ordered.slice(recentUpdates).some(r => String(r.revision) === s.revision)}>
-          <summary>Show ${ordered.length - recentUpdates} earlier ${ordered.length - recentUpdates === 1 ? "update" : "updates"}</summary>
+          <summary>Show ${ordered.length - recentUpdates} earlier ${ordered.length - recentUpdates === 1 ? "revision" : "revisions"}</summary>
           <div class="report-versions">${repeat(ordered.slice(recentUpdates), revision => revision.revision, (revision, index) => version(revision, index + recentUpdates))}</div>
         </details>` : nothing}
-        ${s.next ? html`<button class="btn btn--outline btn--sm" type="button" ?disabled=${s.moreLoading} @click=${loadOlder}>Load older updates</button>` : nothing}
-        ${s.historyLoading || s.historyError || s.next ? html`<p class="meta" role="status">${s.historyLoading ? "Loading saved changes…" : s.historyError || `${ordered.length} saved updates loaded.`}</p>` : nothing}
+        ${s.next ? html`<button class="btn btn--outline btn--sm" type="button" ?disabled=${s.moreLoading} @click=${loadOlder}>Load older revisions</button>` : nothing}
+        ${s.historyLoading || s.historyError || s.next ? html`<p class="meta" role="status">${s.historyLoading ? "Loading revisions…" : s.historyError || `${ordered.length} revisions loaded.`}</p>` : nothing}
       </section>
       <footer class="report-source meta">Grid record <code>${report.id}</code></footer>
     </div>`;
@@ -189,7 +189,7 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     try {
       const result = await data(active.client.getEventHistory(current.report.id, { pageSize: 50, pageToken: current.next }));
       if (!active.signal.aborted) store.set({ revisions: [...current.revisions, ...result.revisions], next: result.nextPageToken, historyError: "" });
-    } catch { if (!active.signal.aborted) store.set({ historyError: "Older updates could not load. Try again." }); }
+    } catch { if (!active.signal.aborted) store.set({ historyError: "Older revisions could not load. Try again." }); }
     finally { if (!active.signal.aborted) store.set({ moreLoading: false }); }
   }
   return async (id: string, revision = "", seed?: Report) => {
@@ -212,18 +212,18 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     const result = await historyPromise;
     if (signal.aborted) return;
     let revisions = result.ok ? result.value.revisions : [], next = result.ok ? result.value.nextPageToken : "";
-    let historyError = result.ok ? "" : "Saved changes could not load. Reload the page to retry.";
+    let historyError = result.ok ? "" : "Revisions could not load. Reload the page to retry.";
     if (revision && !seed) {
       for (let page = 0; next && !revisions.some(r => String(r.revision) === revision) && page < 20; page++) {
         try {
           const older = await data(active.client.getEventHistory(id, { pageSize: 100, pageToken: next }));
           if (signal.aborted) return;
           revisions.push(...older.revisions); next = older.nextPageToken;
-        } catch { historyError = "Some saved changes could not load."; break; }
+        } catch { historyError = "Some revisions could not load."; break; }
       }
       store.set({ report: revisions.find(r => String(r.revision) === revision)?.event });
     }
-    if (!store.get().report) store.set({ error: "The selected report version could not load. Your selection is retained; reload the page to try again." });
+    if (!store.get().report) store.set({ error: "The selected revision could not load. Your selection is retained; reload the page to try again." });
     store.set({ revisions, next, historyError, loading: false, historyLoading: false });
     const loaded = store.get().report;
     if (loaded?.mesh && (loaded.mesh.telemetry as { admin?: unknown } | undefined)?.admin && !store.get().tel.archive && !store.get().tel.loading) void loadTelemetry();

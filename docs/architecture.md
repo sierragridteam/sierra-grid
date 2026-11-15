@@ -20,6 +20,7 @@ on demand. `src/pages/[view].astro` and `index.astro` render the shell
 | `/weather/` | `weather` | Answer, tiles, elevation profile, alert map, hourly grid, week |
 | `/wildfires/`, `/power/` | `conditions` | Live when something is active; the season's record when not |
 | `/mesh/` | `mesh` → `mesh-network` | Map, fleet dashboard, relay and gateways |
+| `/search/` | `search` | The one text search: best matches of every kind, or every matching report |
 | `/scanners/`, `/sources/`, `/cameras/` | their own | Directories and health |
 
 `src/pages/404.astro` is the not-found page: the same shell and sidebar, no
@@ -49,6 +50,38 @@ Selecting or closing a report pushes a history entry without a navigation, so
 the list is not reloaded; Back and Forward go through the router, which mounts
 the page again from the URL. On a phone the list leads and Back from an open
 report returns to it. On desktop the first result opens beside the list.
+
+**Text search has one place: the Search page.** The report browser filters by
+type, status and importance and has no text box; a link to it that carries
+`q` (from when it had one) is sent on to Search. Browsing a feed and looking
+for a thing are different jobs, and two boxes with different reach were one
+too many.
+
+The Search page (`views/search.ts`, `finder-model.ts`, `search-model.ts`)
+has three views of one box. Without `kind`, it asks `/api/v1/search` for the
+best few hits of each kind Grid has a page for, scoped to the corridor, and
+each hit leads to its page. With `kind=EVENT` or `kind=MESH_NODE` (the "All N
+reports, newest first" link under a group) it lists every match of that kind
+from `/api/v1/events` with `q`: every status, newest first, a page at a time,
+with the service's total over all pages and an excerpt where the match is in
+a report's own text. A report opens in Events.
+
+`kind=REVISIONS` ("Search in revision history", offered under any answer,
+including an empty one) searches every stored revision of every report, so
+it finds wording a source has since changed. It asks `/api/v1/history` with
+`q` and `collapse=event`: one row per report, saying which revisions matched
+(first, last, how many), latest match first. A row opens the report in Events
+at its first matching revision. The revisions view on Events itself has no text box.
+
+Nothing is matched in the browser. The text is sent a quarter of a second
+after typing pauses, with `qTyping` so the word being typed matches as a
+prefix; the results on screen stay until the new answer lands, and an answer
+to older text is dropped and its request cancelled. The models decide the
+words: a count, what an empty result does and does not mean, and why a search
+could not be answered (the service refuses with 503 while it rebuilds its
+index, which is shown as an error and never as no results). A kind the
+service could not search is named on the page, because its absence is unknown
+and not none.
 
 `report-profile.ts` turns each report type into tiles, sections and a timeline
 (a mesh node's monitor readings are dated, and a repeater read on schedule is

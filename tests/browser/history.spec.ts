@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { useApiOrigin } from "./api-origin";
 const ready = async (page: import("@playwright/test").Page) => expect(page.locator("#content")).toHaveAttribute("aria-busy", "false", { timeout: 45000 });
+test.beforeEach(async ({ page }) => { await useApiOrigin(page); });
 
 test("old History links open Events with past reports included", async ({ page }) => {
   await page.goto("/history/?layer=ROAD_INCIDENT");
@@ -178,44 +180,15 @@ test("the report list loads the next page as its end scrolls into reach", async 
   await expect(more.getByRole("button", { name: /Load more reports|Try again/ })).toHaveCount(1);
 });
 
-test("search narrows the loaded reports, combines with filters, survives a reload and resets", async ({ page }) => {
-  await page.goto("/events/?selection=none"); await ready(page);
+test("the revisions view lists what was saved in its period", async ({ page }) => {
+  // A fixed period ending now: the last three days of revisions.
+  const period = new URLSearchParams({ time: "fixed", mode: "history", from: new Date(Date.now() - 3 * 86400000).toISOString(), to: new Date(Date.now() + 3600000).toISOString(), selection: "none" });
+  const failed: string[] = [];
+  page.on("response", response => { const url = new URL(response.url()); if (url.pathname === "/api/v1/history" && !response.ok()) failed.push(`${response.status()} ${url.search}`); });
+  await page.goto("/events/?" + period); await ready(page);
+  expect(failed, "the archive answered every request").toEqual([]);
+  await expect(page.locator("#content .callout")).toHaveCount(0);
   await expect(page.locator(".feed-item").first()).toBeVisible({ timeout: 30000 });
-  const all = await page.locator(".feed-item").count();
-  // No labels above the controls: each filter names itself.
-  await expect(page.locator("#browser-type")).toHaveAccessibleName("Type: Any type");
-  await expect(page.locator("#browser-status")).toHaveAccessibleName("Status: Current");
-  await expect(page.locator(".filter-bar .is-applied")).toHaveCount(0);
-  await expect(page.locator(".filter-reset")).toHaveCount(0);
-  const row = async () => JSON.stringify(await Promise.all(["#browser-type", "#browser-status", "#browser-severity"].map(async id => { const b = (await page.locator(id).boundingBox())!; return [Math.round(b.x), Math.round(b.width)]; })));
-  const rowBefore = await row();
-  const word = (await page.locator(".feed-item h2, .feed-item h3").first().innerText()).split(/\s+/).find(w => /^[a-z]{4,}$/i.test(w))!;
-  await page.locator("h1").click();
-  await page.keyboard.press("/");
-  await expect(page.locator("#browser-search")).toBeFocused();
-  await page.keyboard.type(word.toUpperCase());
-  await expect(page.locator("#browser-count")).toContainText(` of ${all} reports match`);
-  const matched = await page.locator(".feed-item").count();
-  expect(matched).toBeGreaterThan(0);
-  for (const title of await page.locator(".feed-item").allInnerTexts()) expect(title.toLowerCase()).toContain(word.toLowerCase());
-  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(word.toUpperCase());
-  await page.reload(); await ready(page);
-  await expect(page.locator("#browser-search")).toHaveValue(word.toUpperCase());
-  await expect(page.locator(".feed-item")).toHaveCount(matched);
-  // A search nothing matches says what was searched, not that conditions are clear.
-  await page.locator("#browser-search").fill("zzzz-no-such-report");
-  await expect(page.locator(".browser-empty")).toContainText("does not establish clear conditions");
-  await page.locator("#browser-status").click();
-  await page.locator('#browser-status-options [data-value="all"]').click(); await ready(page);
-  expect(new URL(page.url()).searchParams.get("q")).toBe("zzzz-no-such-report");
-  await expect(page.locator("#browser-status")).toHaveClass(/is-applied/);
-  // The buttons keep their size and place whatever is chosen, and Reset sits on the count line.
-  expect(await row()).toBe(rowBefore);
-  expect((await new AxeBuilder({ page }).include(".browser-filters").analyze()).violations).toEqual([]);
-  await page.locator(".browser-count .filter-reset").click(); await ready(page);
-  expect(new URL(page.url()).search).not.toMatch(/q=|status=/);
-  await expect(page.locator("#browser-search")).toHaveValue("");
-  await expect(page.locator(".feed-item").first()).toBeVisible({ timeout: 30000 });
-  await page.setViewportSize({ width: 412, height: 915 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await expect(page.locator("#browser-count")).toContainText("revisions");
+  await expect(page.locator(".browser-day").first()).toBeVisible();
 });

@@ -123,7 +123,7 @@ test("departed view cannot overwrite new page after a delayed response", async (
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
 });
 
-test("source reports retain list context and expose source text and saved changes", async ({ page }) => {
+test("source reports retain list context and expose source text and revisions", async ({ page }) => {
   await page.goto("/burn/");
   await ready(page);
   const first = page.locator(".feed-item a").nth(1);
@@ -134,7 +134,7 @@ test("source reports retain list context and expose source text and saved change
   expect(new URL(page.url()).searchParams.get("record")).toBe(id);
   await expect(page.locator(".browser-results")).toBeVisible();
   await expect(page.locator("#browser-detail h2")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Version history", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Revision history", exact: true })).toBeVisible();
   await expect(page.locator("#browser-detail")).not.toContainText("protojson");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("link", { name: "Close report", exact: true }).click();

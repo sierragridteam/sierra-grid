@@ -15,8 +15,10 @@ export type State = {
   timeExplicit: boolean;
   eventStatus?: string;
   severity?: string;
-  /** Events: text typed in the search field; narrows the loaded reports. */
+  /** Search: the text in the box. */
   query?: string;
+  /** Search: "" for the best of every kind, a kind listed in full, or the revision history. */
+  searchKind?: "" | "EVENT" | "MESH_NODE" | "REVISIONS";
   revision?: string;
   browserPages?: number;
   autoSelect?: boolean;
@@ -90,7 +92,9 @@ export function parseState(url: URL, now = Date.now()): State {
     browserPages: Math.max(1, Math.min(20, Number(get("pages")) || 1)),
     eventStatus: ["current", "all", "ACTIVE", "SCHEDULED", "RESOLVED", "EXPIRED"].includes(get("status")) ? get("status") : "current",
     severity: ["INFO", "MINOR", "MODERATE", "SEVERE", "EXTREME"].includes(get("severity")) ? get("severity") : "",
-    query: get("q").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80),
+    // The old single-page links kept their whole state as JSON in `q`: that is not search text.
+    query: Object.keys(legacy).length ? "" : get("q").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 200),
+    searchKind: topic === "search" && ["EVENT", "MESH_NODE", "REVISIONS"].includes(get("kind")) ? get("kind") as "EVENT" | "MESH_NODE" | "REVISIONS" : "",
     revision: /^\d{1,12}$/.test(get("revision")) ? get("revision") : "",
     archiveSource: /^[a-zA-Z0-9:_-]{1,80}$/.test(get("archiveSource"))
       ? get("archiveSource")
@@ -139,7 +143,7 @@ export function changeView(
     revision: "",
     browserPages: 1,
     autoSelect: true,
-    ...(topic !== state.topic ? { preview: "", archiveSource: "", archiveSearch: "", eventStatus: "current", severity: "", layer: "ALL" } : {}),
+    ...(topic !== state.topic ? { query: "", searchKind: "" as const, preview: "", archiveSource: "", archiveSearch: "", eventStatus: "current", severity: "", layer: "ALL" } : {}),
     ...(!state.timeExplicit ? defaults(topic, now) : {}),
   };
 }
@@ -155,9 +159,12 @@ export function stateUrl(state: State): string {
   if (state.metric && state.metric !== "batteryVolts") q.set("metric", state.metric);
   if (["events", "changes"].includes(state.topic) && state.layer && state.layer !== "ALL") q.set("layer", state.layer);
   if (state.autoSelect === false) q.set("selection", "none");
-  if (state.browserPages && state.browserPages > 1) q.set("pages", String(state.browserPages));
+  // Search pages only a full list; its best-of view has none.
+  if (state.browserPages && state.browserPages > 1 && (state.topic !== "search" || (state.searchKind && state.query))) q.set("pages", String(state.browserPages));
   if (state.eventStatus && state.eventStatus !== "current") q.set("status", state.eventStatus);
-  if (state.query && ["events", "changes"].includes(state.topic)) q.set("q", state.query);
+  // Text belongs to Search alone: no other page's link carries it.
+  if (state.query && state.topic === "search") q.set("q", state.query);
+  if (state.searchKind && state.query && state.topic === "search") q.set("kind", state.searchKind);
   if (state.timeExplicit) q.set("time", "fixed");
   for (const k of [
     "node",
