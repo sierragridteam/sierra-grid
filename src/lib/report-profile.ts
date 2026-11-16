@@ -5,7 +5,7 @@
  * renders it with design-system components.
  */
 import type { Report, Revision } from "./event-model.ts";
-import { humanize } from "./event-model.ts";
+import { humanize, isReading } from "./event-model.ts";
 import { regionTimeZone } from "./time.ts";
 import { OTHER_OVERDUE, REPEATER_EVERY, REPEATER_OVERDUE, onRelaySchedule } from "./mesh-monitors.ts";
 
@@ -482,18 +482,140 @@ function burnStatus(report: Report, revisions: Revision[], now: number): Profile
     ...moments([
       ...recent,
       ...(older > 0 ? [{ at: cutoff, label: `${plural(older, "earlier change")} not shown`, kind: "system" as const }] : []),
+      // Calls that repeated the answer: each is on record, and none is a change.
+      ...burnReadings(revisions).filter((e) => e.at >= cutoff && e.at !== latestRead),
       ...(Number.isFinite(latestRead) ? [{ at: latestRead, label: `Burn line: ${burnDayText(b.burnDay)}`, detail: "today's reading" }] : []),
     ], now),
   };
 }
 
+/**
+ * The calls that confirmed a burn answer without changing it (READING
+ * revisions), each at the time of the call. The line a reading came from is
+ * the one whose call differs from the revision before it; without that
+ * revision, the line called last.
+ */
+export function burnReadings(revisions: Revision[]): Entry[] {
+  const byNumber = new Map(revisions.map((r) => [Number(r.revision), r]));
+  const out: Entry[] = [];
+  for (const r of revisions) {
+    if (!isReading(r)) continue;
+    const before = new Map((((byNumber.get(Number(r.revision) - 1)?.event.burnStatus as BurnStatus | undefined)?.burnLines) ?? []).map((l) => [l.id, ms(l.observation?.observedAt)]));
+    const known = byNumber.has(Number(r.revision) - 1);
+    const line = ((r.event.burnStatus as BurnStatus | undefined)?.burnLines ?? [])
+      .filter((l) => Number.isFinite(ms(l.observation?.observedAt)))
+      .filter((l) => !known || !(ms(l.observation?.observedAt) <= (before.get(l.id) ?? -Infinity)))
+      .sort((x, y) => ms(y.observation?.observedAt) - ms(x.observation?.observedAt))[0];
+    if (line) out.push({ at: ms(line.observation!.observedAt), label: `Checked: ${burnDayText(line.burnDay)}`, detail: line.observation?.message || line.name });
+  }
+  return out;
+}
+
+type ChainPlace = { place?: string };
+type ChainControl = { level?: string; highway?: string; direction?: string; from?: ChainPlace; to?: ChainPlace; inferred?: boolean; signs?: { id?: string; place?: string; direction?: string; level?: string; since?: string | null }[] };
+const chainRequirement = (level?: string) => ({ R1: "Chains or snow tires", R2: "Chains, or 4WD with snow tires", R3: "Chains on every vehicle" } as Record<string, string>)[level ?? ""] ?? "Chain control";
+const chainExtent = (c?: ChainControl) => (!c?.from?.place ? "" : !c.to?.place || c.to.place.toLowerCase() === c.from.place.toLowerCase() ? c.from.place : `${c.from.place} to ${c.to.place}`);
+
+/**
+ * A chain requirement on a stretch of highway: an event that starts when
+ * Caltrans posts it and ends when it is lifted. The timeline is when it took
+ * effect, each time the stretch grew or shrank, and when it ended.
+ */
+function chainControl(report: Report, revisions: Revision[], now: number): Profile {
+  const c = report.chainControl as ChainControl;
+  const signs = c.signs ?? [];
+  const began = ms(report.effective), ended = report.status === "ACTIVE" ? NaN : ms(report.observedAt);
+  const resized = changes(revisions, (e) => ({ Extent: chainExtent(e.chainControl as ChainControl | undefined) || undefined }))
+    .map((e) => (e.label.startsWith("Extent: ") ? { ...e, label: `Now ${e.label.slice(8)}` } : e));
+  return {
+    subtitle: [c.highway, chainExtent(c), c.direction].filter(Boolean).join(" · "),
+    place: c.from?.place,
+    stats: [
+      { label: "Requirement", value: c.level || "Not given", sub: chainRequirement(c.level) },
+      { label: report.status === "ACTIVE" ? "In effect for" : "Was in effect", value: Number.isFinite(began) ? duration((Number.isFinite(ended) ? ended : now) - began) : "Not known", sub: Number.isFinite(began) ? `since ${dayLabel.format(began)}, ${clock.format(began)} PT` : undefined },
+      { label: "Checkpoints", value: String(signs.length), sub: c.inferred ? "Stretch inferred from nearby signs" : "Signed by Caltrans" },
+    ],
+    sections: [{ title: "Checkpoints", items: signs.map((s) => ({ label: [text(String(s.place || "Checkpoint").toLowerCase()), s.direction].filter(Boolean).join(" · "), value: [s.level, s.since ? `since ${clock.format(ms(s.since))}` : ""].filter(Boolean).join(" · ") })) }],
+    identifiers: [],
+    ...moments([
+      { at: began, label: `${c.level} posted`, detail: chainExtent(c) },
+      { at: firstSaved(revisions, report), label: "First saved by Grid", kind: "system" },
+      ...resized,
+      ...(Number.isFinite(ended) ? [{ at: ended, label: "Lifted", detail: "no longer listed by Caltrans", kind: "system" as const }] : []),
+    ], now),
+  };
+}
+
+type RoadSegment = { roadId?: string; name?: string; section?: string; status?: string; congestion?: string; beyond?: { name?: string; side?: string; status?: string }[] };
+const roadStatusText = (v?: string) => ({ OPEN: "Open", CLOSED: "Closed", RESTRICTED: "Restricted", MAINTENANCE: "Roadwork" } as Record<string, string>)[v ?? ""] ?? "Not known";
+
+/**
+ * A monitored road: an event that never ends, revised when the road closes,
+ * reopens or its traffic level changes. The timeline is those changes.
+ */
+function roadSegment(report: Report, revisions: Revision[], now: number): Profile {
+  const r = report.roadSegment as RoadSegment;
+  const fields = (e: Report) => {
+    const v = e.roadSegment as RoadSegment | undefined;
+    return { Road: v ? roadStatusText(v.status) : undefined, Traffic: v?.congestion ? humanize(v.congestion) : undefined, "Past the end": v ? (v.beyond ?? []).map((b) => b.name).filter(Boolean).join("; ") || "No seasonal closure" : undefined };
+  };
+  const all = changes(revisions, fields).filter((e) => !/^(Status|Severity):/.test(e.label));
+  const since = [...all].reverse().find((e) => e.label.startsWith("Road:"))?.at ?? firstSaved(revisions, report);
+  const cutoff = now - BURN_WINDOW_DAYS * DAY;
+  const recent = all.filter((e) => e.at >= cutoff), older = all.length - recent.length;
+  return {
+    subtitle: [r.name, r.section].filter(Boolean).join(" · "),
+    stats: [
+      { label: "Road", value: roadStatusText(r.status), sub: Number.isFinite(since) ? `for ${duration(now - since)}, since ${dayLabel.format(since)}` : undefined },
+      { label: "Traffic", value: r.congestion ? humanize(r.congestion) : "Not known" },
+      ...(r.beyond ?? []).map((b) => ({ label: b.side === "START" ? "Before the start" : "Past the end", value: roadStatusText(b.status), sub: b.name })),
+    ],
+    sections: [],
+    identifiers: [],
+    ...moments([
+      { at: firstSaved(revisions, report), label: "First saved by Grid", kind: "system" },
+      ...recent,
+      ...(older > 0 ? [{ at: cutoff, label: `${plural(older, "earlier change")} not shown`, kind: "system" as const }] : []),
+    ], now),
+  };
+}
+
+type SourceHealth = { sourceId?: string; status?: string; since?: string; error?: string; lastSuccessAt?: string | null };
+export const sourceStatusText = (v?: string) => ({ OK: "Current", STALE: "Stale", UNAVAILABLE: "Unavailable" } as Record<string, string>)[v ?? ""] ?? "Not read yet";
+
+/**
+ * One upstream feed's health: an event that never ends and is revised only
+ * when the feed's status changes, so its timeline is the feed's outages.
+ */
+function sourceHealth(report: Report, revisions: Revision[], now: number): Profile {
+  const h = report.sourceHealth as SourceHealth;
+  const since = ms(h.since);
+  const ordered = [...revisions].sort((a, b) => Number(a.revision) - Number(b.revision));
+  const turns: Entry[] = ordered.map((r, i) => {
+    const v = r.event.sourceHealth as SourceHealth | undefined;
+    return { at: ms(v?.since), label: i === 0 ? `Recording began: ${sourceStatusText(v?.status).toLowerCase()}` : sourceStatusText(v?.status), detail: v?.error || undefined, kind: "system" as const };
+  });
+  return {
+    when: Number.isFinite(since) ? `${sourceStatusText(h.status)} for ${duration(now - since)}` : undefined,
+    stats: [
+      { label: "Status", value: sourceStatusText(h.status), sub: Number.isFinite(since) ? `since ${dayLabel.format(since)}, ${clock.format(since)} PT` : undefined },
+      { label: "Last good reading", value: h.lastSuccessAt ? ago(ms(h.lastSuccessAt), now) : "Never", sub: h.status === "OK" ? "as of the last change" : "before it went quiet" },
+      { label: "Changes on record", value: String(Math.max(0, Number(report.revision) - 1)) },
+    ],
+    sections: h.error ? [{ title: "Reason given", items: [{ label: "Error", value: h.error }] }] : [],
+    identifiers: [],
+    ...moments(turns, now),
+  };
+}
+
 const PROFILES: Partial<Record<string, (report: Report, revisions: Revision[], now: number) => Profile>> = {
   WILDFIRE: wildfire, POWER: power, EVACUATION: evacuation, WEATHER_ALERT: weatherAlert, MESH: meshNode, BURN_STATUS: burnStatus,
+  CHAIN_CONTROL: chainControl, ROAD_SEGMENT: roadSegment, SOURCE_HEALTH: sourceHealth,
 };
 
 /** The profile for a report's type, or undefined (render generic details instead). */
 export function reportProfile(report: Report, revisions: Revision[] = [], now = Date.now()): Profile | undefined {
-  const detail = { WILDFIRE: report.wildfire, POWER: report.power, EVACUATION: report.evacuation, WEATHER_ALERT: report.weatherAlert, MESH: report.mesh, BURN_STATUS: report.burnStatus }[report.layer as string];
+  const detail = { WILDFIRE: report.wildfire, POWER: report.power, EVACUATION: report.evacuation, WEATHER_ALERT: report.weatherAlert, MESH: report.mesh, BURN_STATUS: report.burnStatus, CHAIN_CONTROL: report.chainControl, ROAD_SEGMENT: report.roadSegment, SOURCE_HEALTH: report.sourceHealth }[report.layer as string];
   const profile = report.layer === "ROAD_INCIDENT" && report.roadIncident
     ? (report.roadIncident.closure ? roadClosure : roadIncident)(report, revisions, now)
     : detail ? PROFILES[report.layer]?.(report, revisions, now) : undefined;

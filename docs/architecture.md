@@ -87,6 +87,28 @@ and not none.
 (a mesh node's monitor readings are dated, and a repeater read on schedule is
 not called late). Reports of other types fall back to a generic view.
 
+## What Grid has on record
+
+Three kinds of report are standing state the API revises when it changes: a
+monitored road (`ROAD_SEGMENT`), a stretch under a chain requirement
+(`CHAIN_CONTROL`) and an upstream feed's health (`SOURCE_HEALTH`, in no
+place). `record-model.ts` reads their revisions into what happened: Source
+health lists each feed's status changes and since when it has held its
+status; Roads lists chain requirements posted, extended and lifted, and
+roads closing and reopening, over the last week. Those panels are read apart
+from the live data and say so when they could not be read; they are absent
+while the API records none.
+
+A revision has a kind. A report's own history asks for both (`CHANGE` and
+`READING`) and shows a reading as "checked; the answer did not change" (each
+call to a burn line); lists of revisions elsewhere show changes only.
+Standing state (`ambientLayers` in `event-model.ts`) is not counted as events
+on the Overview.
+
+A development server can read another API (`PUBLIC_GRID_API_ORIGIN`, for a
+sierra-data change that is not deployed). The switch is compiled out of a
+production build.
+
 ## Lifecycle
 
 Static pages use Astro's `ClientRouter`. `page.ts` uses the design system's

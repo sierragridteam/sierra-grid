@@ -11,7 +11,7 @@ import { telemetryMetrics, telemetrySeries, type TelemetryMetric } from "./mesh-
 import { data, makeContext, type Context } from "./context";
 import { fmt } from "./render";
 import { stateUrl } from "./state";
-import { humanize, identifierList, reportFields, reportChanges, typeLabel, type Report, type Revision } from "./event-model";
+import { humanize, identifierList, isReading, reportChanges, reportFields, typeLabel, type Report, type Revision } from "./event-model";
 export { identifierList };
 
 export const severityTone = (value: string) => ["SEVERE", "EXTREME"].includes(value) ? "alarm" as const : value === "MODERATE" ? "elevated" as const : "muted" as const;
@@ -45,6 +45,8 @@ const groupFields = (fields: [string, string][]) => {
 const recentUpdates = 5;
 /** A titled card grouping one section of the report. */
 const block = (title: string, body: unknown, actions?: unknown) => html`<section class="card report-block">${actions ? html`<div class="report-block__head"><h3>${title}</h3>${actions}</div>` : html`<h3>${title}</h3>`}${body}</section>`;
+/** A report's own history shows its readings too; lists of revisions elsewhere show changes. */
+const EVERY_KIND: ("CHANGE" | "READING")[] = ["CHANGE", "READING"];
 export type DetailClose = { href: () => string; onClose: () => void };
 
 /** A mesh node's monitor telemetry for the Measurements card. */
@@ -72,6 +74,11 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     const version = (revision: Revision, index: number) => {
       const previous = ordered[index + 1], changes = previous ? diffProps(revision, previous) : undefined;
       const label = `Update ${revision.revision} · ${fmt(revision.observedAt || revision.ingestedAt)}`;
+      // A reading was saved because the source was checked and its answer held.
+      if (isReading(revision)) return html`<article class=${`report-version${String(revision.revision) === s.revision ? " is-selected" : ""}`}>
+        <p class="ds-diff-label">Reading ${revision.revision} · ${fmt(revision.observedAt || revision.ingestedAt)}</p>
+        <p class="meta">Checked; the answer did not change.${readingNote(revision) ? html` <span class="report-reading">“${readingNote(revision)}”</span>` : nothing}</p>
+      </article>`;
       return html`<article class=${`report-version${String(revision.revision) === s.revision ? " is-selected" : ""}`}>
         ${changes?.changes.length ? html`<sierra-data-diff .props=${changes}></sierra-data-diff>` : !previous && !s.next ? html`<p class="ds-diff-label">First saved · ${fmt(revision.ingestedAt || revision.observedAt)}</p>` : html`<p class="ds-diff-label">${label}</p><p class="meta">${previous ? "No change to the displayed report details." : "Oldest loaded update. Load earlier updates to compare."}</p>`}
       </article>`;
@@ -138,6 +145,12 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     </div>`;
   }, { signal: ctx.signal });
 
+  /** What a reading said: the newest burn-line message in its snapshot. */
+  function readingNote(revision: Revision) {
+    const lines = (revision.event.burnStatus?.burnLines ?? []) as { observation?: { message?: string; observedAt?: string } | null }[];
+    return [...lines].sort((a, b) => Date.parse(b.observation?.observedAt || "") - Date.parse(a.observation?.observedAt || ""))[0]?.observation?.message || "";
+  }
+
   /** Every monitor measurement over 24 hours or 7 days, as small multiples. */
   function measurements(t: Telemetry) {
     const now = Date.now();
@@ -183,7 +196,7 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     if (!current.report || !current.next || current.moreLoading) return;
     store.set({ moreLoading: true });
     try {
-      const result = await data(active.client.getEventHistory(current.report.id, { pageSize: 50, pageToken: current.next }));
+      const result = await data(active.client.getEventHistory(current.report.id, { pageSize: 50, pageToken: current.next, kind: EVERY_KIND }));
       if (!active.signal.aborted) store.set({ revisions: [...current.revisions, ...result.revisions], next: result.nextPageToken, historyError: "" });
     } catch { if (!active.signal.aborted) store.set({ historyError: "Older revisions could not load. Try again." }); }
     finally { if (!active.signal.aborted) store.set({ moreLoading: false }); }
@@ -200,7 +213,7 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
       void data(active.client.getEvent(id)).then(full => { const now = store.get().report; if (!signal.aborted && now?.id === id) store.set({ report: { ...now, geometry: full.geometry } }); }, () => {});
     // A node's measurements do not wait for its history.
     if (seed?.mesh && (seed.mesh.telemetry as { admin?: unknown } | undefined)?.admin) void loadTelemetry();
-    const historyPromise = data(active.client.getEventHistory(id, { pageSize: 50 })).then(value => ({ ok: true as const, value }), () => ({ ok: false as const }));
+    const historyPromise = data(active.client.getEventHistory(id, { pageSize: 50, kind: EVERY_KIND })).then(value => ({ ok: true as const, value }), () => ({ ok: false as const }));
     if (!seed && !revision) {
       try { const report = await data(active.client.getEvent(id)); if (!signal.aborted) store.set({ report }); }
       catch { if (!signal.aborted) store.set({ error: "This report could not be loaded. Your selection is retained; reload the page to try again." }); }
@@ -212,7 +225,7 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     if (revision && !seed) {
       for (let page = 0; next && !revisions.some(r => String(r.revision) === revision) && page < 20; page++) {
         try {
-          const older = await data(active.client.getEventHistory(id, { pageSize: 100, pageToken: next }));
+          const older = await data(active.client.getEventHistory(id, { pageSize: 100, pageToken: next, kind: EVERY_KIND }));
           if (signal.aborted) return;
           revisions.push(...older.revisions); next = older.nextPageToken;
         } catch { historyError = "Some revisions could not load."; break; }

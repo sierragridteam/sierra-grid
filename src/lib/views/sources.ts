@@ -10,6 +10,7 @@ import { fmt, httpUrl } from "../render";
 import { stateUrl } from "../state";
 import type { ViewId } from "../../config/views";
 import { since } from "../conditions-model";
+import { sourceChanges, sourceSince, type RecordEntry } from "../record-model";
 import { createStore, region } from "@sierragridteam/design-system/lib/region";
 import { html, nothing } from "@sierragridteam/design-system/lib/template";
 import { badge, card, stat } from "@sierragridteam/design-system/lib/ui";
@@ -17,11 +18,13 @@ import { badge, card, stat } from "@sierragridteam/design-system/lib/ui";
 const REFRESH_MS = 60_000;
 type Sources = Extract<Awaited<ReturnType<Context["client"]["listSources"]>>, { notModified: false }>["data"]["sources"];
 type Source = Sources[number];
-type State = { sources: Source[]; loaded: boolean; error: boolean; updatedAt: number; now: number };
+/** `history` is undefined until read, and when the read failed: unknown, not "no changes". */
+type State = { sources: Source[]; loaded: boolean; error: boolean; updatedAt: number; now: number; held: ReturnType<typeof sourceSince>; history?: RecordEntry[] };
+const HISTORY_DAYS = 30, DAY = 86_400_000;
 
 /** The page each source feeds, in sidebar order; anything else is "Other". */
 const FEEDS: [label: string, view: ViewId | "", ids: string[]][] = [
-  ["Roads", "roads", ["caltrans", "chp"]],
+  ["Roads", "roads", ["caltrans", "caltrans-cc", "chp", "roads"]],
   ["Weather", "weather", ["nws", "weather"]],
   ["Wildfires", "WILDFIRE", ["calfire", "firis", "caloes"]],
   ["Power", "POWER", ["pge", "psps"]],
@@ -36,7 +39,20 @@ const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 
 export async function mount(ctx: Context) {
   const { client, state, $, signal } = ctx;
-  const store = createStore<State>({ sources: [], loaded: false, error: false, updatedAt: 0, now: Date.now() });
+  const store = createStore<State>({ sources: [], loaded: false, error: false, updatedAt: 0, now: Date.now(), held: new Map() });
+  // Each feed's status history is a Grid record of its own (one report per source, in no place).
+  // It fills in after the sources; a failure leaves it unknown and the page as it was.
+  async function loadHistory() {
+    const now = Date.now();
+    const [events, revisions] = await Promise.allSettled([
+      data(client.listEvents({ layer: ["SOURCE_HEALTH"], pageSize: 200, geometryFormat: "NONE" })),
+      data(client.listHistory({ layer: ["SOURCE_HEALTH"], from: new Date(now - HISTORY_DAYS * DAY).toISOString(), to: new Date(now).toISOString(), pageSize: 200, geometryFormat: "NONE" })),
+    ]);
+    if (signal.aborted) return;
+    if (events.status === "fulfilled") store.set({ held: sourceSince(events.value.events) });
+    store.set({ history: revisions.status === "fulfilled" ? sourceChanges(revisions.value.revisions) : undefined });
+  }
+  const recordUrl = (id: string) => stateUrl({ ...state, topic: "events", layer: "ALL", eventStatus: "all", record: id, revision: "", autoSelect: true, timeExplicit: false } as any);
   async function load() {
     try {
       const d = await data(client.listSources());
@@ -61,6 +77,12 @@ export async function mount(ctx: Context) {
       const last = ms(x.lastSuccessAt);
       return Number.isFinite(last) ? html`${since(last, s.now)} ago<span class="meta sources-clock"> · ${fmt(last)}</span>` : "Never";
     };
+    // Since when it has held this status, from its history; shown only when that agrees with the status now.
+    const heldSince = (x: Source) => {
+      const h = s.held.get(x.id);
+      return h && h.status === x.status && Number.isFinite(h.since) ? html`<a class="meta sources-since" href=${recordUrl(h.eventId)}>since ${fmt(h.since)}</a>` : nothing;
+    };
+    const recorded = s.held.size > 0;
     return html`
       ${pageHero({ kicker: "Source health · the feeds behind every page", title, titleClass: "sources-answer", lines })}
       ${s.error && s.sources.length ? html`<p class="callout">The last check failed; this is the state as of ${fmt(s.updatedAt)}.</p>` : nothing}
@@ -76,6 +98,14 @@ export async function mount(ctx: Context) {
           <p>${Number.isFinite(ms(x.lastSuccessAt)) ? `Last good reading ${since(ms(x.lastSuccessAt), s.now)} ago (${fmt(x.lastSuccessAt)}); it goes stale after ${every(x.staleAfterSeconds)}.` : "It has never been read."}${x.lastError ? html` Reason given: <span class="sources-error">${x.lastError}</span>.` : nothing}</p>
           ${g?.[1] ? html`<p class="meta">Feeds <a href=${pageUrl(g[1] as ViewId)}>${g[0]}</a>: what that page shows from this source may be out of date.</p>` : nothing}
         </li>`; })}</ul>`) : nothing}
+      ${recorded ? card({ variant: "panel", title: "Status changes", kicker: `Last ${HISTORY_DAYS} days, as Grid saw them`, as: "section", class: "sources-history" },
+        !s.history ? html`<p class="meta">The record of status changes could not be read right now.</p>`
+          : s.history.length ? html`<ul class="sources-changes">${s.history.slice(0, 40).map((e) => html`<li>
+            ${badge(e.tone === "ok" ? "Back" : e.tone === "elevated" ? "Stale" : "Down", { tone: e.tone === "muted" ? "elevated" : e.tone })}
+            <a href=${recordUrl(e.id)}>${e.label}</a><span class="meta"> · ${fmt(e.at)}</span>
+            ${e.detail ? html`<span class="meta sources-error">${e.detail}</span>` : nothing}
+          </li>`)}</ul>${s.history.length > 40 ? html`<p class="meta">${s.history.length - 40} earlier changes not shown.</p>` : nothing}`
+          : html`<p class="meta">No source changed status in the last ${HISTORY_DAYS} days.</p>`) : nothing}
       ${card({ variant: "panel", title: "Every source", kicker: "Grouped by the page it feeds", as: "section", class: "sources-all" },
         s.sources.length ? html`<div class="table-scroll"><table class="table table--cards table--fields sources-table">
           <thead><tr><th scope="col">Source</th><th scope="col">Status</th><th scope="col">Last good reading</th><th scope="col">Checked</th><th scope="col">Stale after</th><th scope="col"><span class="sr-only">Source site</span></th></tr></thead>
@@ -83,7 +113,7 @@ export async function mount(ctx: Context) {
             <tr class="sources-group"><th scope="rowgroup" colspan="6">${g.view ? html`<a href=${pageUrl(g.view as ViewId)}>${g.label}</a>` : g.label}</th></tr>
             ${g.list.map((x) => html`<tr>
               <th scope="row">${x.name}<span class="meta sources-by">${x.attribution}</span></th>
-              <td data-label="Status">${badge(word(x.status), { tone: tone(x.status) })}</td>
+              <td data-label="Status">${badge(word(x.status), { tone: tone(x.status) })}${heldSince(x)}</td>
               <td data-label="Last good reading">${fresh(x)}</td>
               <td data-label="Checked">${x.kind === "REPORTER" ? `reports in every ${every(x.pollIntervalSeconds)}` : `every ${every(x.pollIntervalSeconds)}`}</td>
               <td data-label="Stale after">${every(x.staleAfterSeconds)}</td>
@@ -91,12 +121,13 @@ export async function mount(ctx: Context) {
             </tr>`)}
           </tbody>`)}</table></div>`
           : html`<p class="meta">${s.loaded ? "No sources returned." : "Loading…"}</p>`)}
-      <p class="meta sources-footnote" data-page-updated>A current source means Grid's last read succeeded, not that nothing is happening. "Reports in" sources are devices that push to Grid. No uptime history is kept. Updated ${s.updatedAt ? fmt(s.updatedAt) : "—"}, refreshes every minute.</p>`;
+      <p class="meta sources-footnote" data-page-updated>A current source means Grid's last read succeeded, not that nothing is happening. "Reports in" sources are devices that push to Grid. ${recorded ? "Status changes are kept for upstream feeds from when Grid began recording them, not for devices that report in." : "No uptime history is kept."} Updated ${s.updatedAt ? fmt(s.updatedAt) : "—"}, refreshes every minute.</p>`;
   }, { signal });
 
   await load();
   // Left during the first load: start nothing that would outlive the page.
   if (signal.aborted) return;
-  const refresh = setInterval(() => void load(), REFRESH_MS);
+  void loadHistory();
+  const refresh = setInterval(() => { void load(); void loadHistory(); }, REFRESH_MS);
   signal.addEventListener("abort", () => clearInterval(refresh));
 }

@@ -16,10 +16,13 @@ import {
 } from "../road-corridor";
 import { createStore, region } from "@sierragridteam/design-system/lib/region";
 import { html, nothing } from "@sierragridteam/design-system/lib/template";
+import { roadRecord, type RecordEntry } from "../record-model";
 import { badge, card, corridor, feedItem, messageSign, schedule, stat, type CorridorMarker, type StateTone } from "@sierragridteam/design-system/lib/ui";
 import { createGeoMap, type SierraGeoMap } from "@sierragridteam/design-system/lib/geo-map";
 
 const HOUR = 3_600_000, DAY = 24 * HOUR, REFRESH_MS = 120_000;
+/** How far back the road record panel reads. */
+const RECORD_DAYS = 7;
 /** A point counts as on a route within this distance of its line (km). */
 const ON_ROUTE_KM = 1;
 /** Closure points sit at the end of what the source closes; allow more room. */
@@ -34,6 +37,8 @@ type Cameras = Extract<Awaited<ReturnType<Context["client"]["listCameras"]>>, { 
 type Closure = { id: string; headline: string; highway?: string; direction?: string; description?: string; coordinates: Position };
 
 type State = {
+  /** What Grid has on record for the last RECORD_DAYS; undefined until read, and when the read failed. */
+  record?: RecordEntry[]; recordError?: boolean;
   segments: Segment[]; closures: Closure[]; chains: ChainControl[]; signs: Sign[]; events: RoadEvent[]; cameras?: Cameras;
   chp?: { status: string; lastSuccessAt?: string | null };
   loaded: boolean; errors: string[]; stale: string[]; updatedAt: number; now: number;
@@ -125,6 +130,17 @@ export async function mount(ctx: Context) {
     });
   }
 
+  // Chain requirements and road status changes Grid has saved: a storm's sequence after the fact.
+  // Read apart from the live layers; a failure here says so in its own panel and nowhere else.
+  async function loadRecord() {
+    const now = Date.now();
+    try {
+      const r = await data(client.listHistory({ place: state.place, layer: ["CHAIN_CONTROL", "ROAD_SEGMENT"], from: new Date(now - RECORD_DAYS * DAY).toISOString(), to: new Date(now).toISOString(), pageSize: 200, geometryFormat: "NONE" }));
+      if (!signal.aborted) store.set({ record: roadRecord(r.revisions), recordError: false });
+    } catch { if (!signal.aborted) store.set({ recordError: true }); }
+  }
+  const anyRecordUrl = (id: string) => stateUrl({ ...state, topic: "events", layer: "ALL", eventStatus: "all", record: id, revision: "", compare: "", autoSelect: true, timeExplicit: false } as any);
+
   $("content").innerHTML = `<div id="roads-page"></div>`;
   let map: SierraGeoMap | undefined;
 
@@ -190,6 +206,14 @@ export async function mount(ctx: Context) {
               source: e.provenance.sourceName,
             }))}</div>` : html`<p class="meta">${!s.loaded ? "Loading reports…" : reportsUnknown ? "Road reports are unavailable right now." : "No active road reports."}</p>`}
           ${s.loaded && !chpActive.length ? html`<p class="meta roads-chp-none">${reportsUnknown || (s.chp && s.chp.status !== "OK") || !s.chp ? "CHP traffic incidents could not be checked right now." : "No CHP traffic incidents in the region right now."}</p>` : nothing}`)}
+        ${s.record?.length || s.recordError ? card({ variant: "panel", title: "On record", kicker: `Chain controls and road status, last ${RECORD_DAYS} days`, as: "section", class: "roads-record" },
+          s.record?.length ? html`<ul class="roads-record-list">${s.record.slice(0, 30).map((e) => html`<li>
+              <span class="meta roads-record__when">${fmt(e.at)}</span>
+              ${badge(e.tone === "alarm" ? "Alert" : e.tone === "elevated" ? "Control" : e.tone === "ok" ? "Clear" : "Traffic", { tone: e.tone === "muted" ? "elevated" : e.tone })}
+              <a href=${anyRecordUrl(e.id)}>${e.label}</a>${e.detail ? html`<span class="meta"> · ${e.detail}</span>` : nothing}
+            </li>`)}</ul>${s.record.length > 30 ? html`<p class="meta">${s.record.length - 30} earlier entries not shown.</p>` : nothing}
+            <p class="meta">What Grid saved as it happened, newest first. Posted times are Caltrans's; the rest are when Grid saw the change.</p>`
+            : html`<p class="meta">The record could not be read right now.</p>`) : nothing}
         ${card({ variant: "panel", title: "Highway signs", kicker: `${board.showing.reduce((n, x) => n + x.count, 0)} of ${s.signs.length} showing a message`, as: "section", class: "roads-signs" },
           html`${board.showing.length ? html`<div class="roads-sign-grid">${board.showing.map((x) => messageSign({ location: x.location, route: x.route, direction: x.direction, pages: x.pages, inService: x.inService,
               detail: [x.count > 1 ? `${x.count} signs show this` : "", Number.isFinite(x.since) ? `since ${fmt(x.since)}` : ""].filter(Boolean).join(" · ") }))}</div>` : html`<p class="meta">${s.loaded ? "No sign is showing a message." : "Loading signs…"}</p>`}
@@ -224,7 +248,8 @@ export async function mount(ctx: Context) {
   await load();
   // Left during the first load: start nothing that would outlive the page.
   if (signal.aborted) return;
-  const refresh = setInterval(() => void load(), REFRESH_MS);
+  void loadRecord();
+  const refresh = setInterval(() => { void load(); void loadRecord(); }, REFRESH_MS);
   const tick = setInterval(() => store.set({ now: Date.now() }), 30_000);
   signal.addEventListener("abort", () => { clearInterval(refresh); clearInterval(tick); });
 }

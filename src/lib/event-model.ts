@@ -7,10 +7,20 @@ export type Revision = Extract<Awaited<ReturnType<Context["client"]["getEventHis
 export const eventTypes = [
   ["ALL", "All types"], ["WILDFIRE", "Wildfires"], ["ROAD_INCIDENT", "Roads"],
   ["WEATHER_ALERT", "Weather notices"], ["POWER", "Power"], ["EVACUATION", "Evacuations"],
-  ["BURN_STATUS", "Burn day"], ["MESH", "Mesh"],
+  ["BURN_STATUS", "Burn day"], ["CHAIN_CONTROL", "Chain control"], ["ROAD_SEGMENT", "Road status"], ["MESH", "Mesh"],
 ] as const;
+/** Layers with a name but no place in the type filter: their reports are in no place. */
+const otherTypes: Record<string, string> = { SOURCE_HEALTH: "Source health" };
+/**
+ * Layers whose reports are standing state, not something happening: a road
+ * that is open, a mesh node that is up, a county's burn answer. They stay out
+ * of counts of events.
+ */
+export const ambientLayers: readonly string[] = ["MESH", "ROAD_SEGMENT", "SOURCE_HEALTH"];
+/** A revision saved because a reading confirmed the state, not because anything changed. */
+export const isReading = (revision?: { kind?: string } | null) => revision?.kind === "READING";
 export const severityRank: Record<string, number> = { EXTREME: 4, SEVERE: 3, MODERATE: 2, MINOR: 1, INFO: 0 };
-export const typeLabel = (type: string) => eventTypes.find(([id]) => id === type)?.[1] || humanize(type);
+export const typeLabel = (type: string) => eventTypes.find(([id]) => id === type)?.[1] || otherTypes[type] || humanize(type);
 export function humanize(value: string) {
   return value.replace(/^(BURN_PERMISSION_|BURN_DAY_|CALFIRE_|EVACUATION_LEVEL_)/, "")
     .replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ").toLowerCase().replace(/^./, c => c.toUpperCase());
@@ -55,7 +65,7 @@ export function reportFeedProps(report: Report, href: string, revision?: Revisio
     title: report.headline || "Untitled report", href,
     severity: { tone: ["SEVERE", "EXTREME"].includes(report.severity) ? "alarm" : report.severity === "MODERATE" ? "elevated" : "muted", label: humanize(report.severity) },
     tags: [typeLabel(report.layer), humanize(report.status)], place: report.areaLabel,
-    when: revision ? `${regionalTime(time)} · Revision ${revision.revision}` : closure ? `${regionalTime(closure.plannedStart)} – ${regionalTime(closure.plannedEnd)}` : undefined,
+    when: revision ? `${regionalTime(time)} · ${isReading(revision) ? "Reading, no change · revision" : "Revision"} ${revision.revision}` : closure ? `${regionalTime(closure.plannedStart)} – ${regionalTime(closure.plannedEnd)}` : undefined,
     received: revision ? undefined : relativeTime(time), receivedAt: time,
     source: (report.provenance.attribution || report.provenance.sourceName || "Source not supplied") + (report.enhancement?.fields.length ? " · Grid summary" : ""),
   };
@@ -75,7 +85,8 @@ export function reportFields(report: Report): Record<string, string> {
   add("Status", humanize(report.status)); add("Severity", humanize(report.severity));
   add("Headline", report.headline); add("Summary", report.summary); add("Area", report.areaLabel);
   add("Original report", report.description);
-  const detail = report.wildfire || report.power || report.evacuation || report.weatherAlert || report.earthquake || report.roadIncident || report.burnStatus || report.mesh;
+  const detail = report.wildfire || report.power || report.evacuation || report.weatherAlert || report.earthquake || report.roadIncident || report.burnStatus || report.mesh
+    || report.chainControl || report.roadSegment || report.sourceHealth;
   const labels: Record<string, string> = { acres: "Area (acres)", containment: "Containment (%)", depthKm: "Depth (km)", customersAffected: "Customers affected", estimatedRestoration: "Estimated restoration", plannedStart: "Planned start", plannedEnd: "Planned end", areaDesc: "Affected area", permission: "Burn permission", calfireObservedAt: "CAL FIRE report time" };
   const walk = (object: Record<string, unknown>, prefix = "") => {
     for (const [key, value] of Object.entries(object)) {

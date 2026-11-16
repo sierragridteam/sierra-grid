@@ -28,6 +28,10 @@
 .roads-schedule { --span: 8; }
 .roads-reports { --span: 4; }
 .roads-signs { --span: 12; }
+.roads-record { --span: 12; }
+.roads-record-list, .sources-changes { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.roads-record-list li, .sources-changes li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.roads-record__when { min-width: 9.5em; }
 .roads-cameras { --span: 12; }
 .roads-feed { display: grid; gap: var(--space-3); }
 .roads-chp-none { margin-top: var(--space-3); }
@@ -106,7 +110,8 @@
 .conditions-pending { min-height: 220px; }
 
 /* Source health and Scanner feeds. */
-.sources-kpis, .sources-attention { margin-bottom: var(--space-4); }
+.sources-kpis, .sources-attention, .sources-history { margin-bottom: var(--space-4); }
+.sources-since { display: block; }
 .sources-problems { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
 .sources-problems li { display: grid; gap: var(--space-1); }
 .sources-problems p { margin: 0; }
