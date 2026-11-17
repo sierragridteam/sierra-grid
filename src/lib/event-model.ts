@@ -96,3 +96,17 @@ export function reportChanges(before: Report, after: Report) {
     .filter(key => a[key] !== b[key])
     .map(label => ({ label, kind: !Object.hasOwn(a, label) ? "added" : !Object.hasOwn(b, label) ? "removed" : "changed", before: a[label] || "Not supplied", after: b[label] || "Not supplied" }));
 }
+
+/**
+ * A source field that is a list of identifiers (a mesh node's gateways), as
+ * its entries, so it renders as short pills and never as a comma-separated
+ * run of 64-character hashes. A lone hash is a list of one. A list counts
+ * when any entry is a hash: gateway lists mix key hashes with reporter names
+ * ("relay"), and requiring every entry to be a hash sent exactly those lists
+ * to the page as raw text.
+ */
+export function identifierList(value: string): string[] | undefined {
+  const parts = value.split(/\s*,\s*/).filter(Boolean);
+  const hash = (part: string) => /^[0-9a-f]{8,}$/i.test(part);
+  return parts.length && parts.some(hash) ? parts : undefined;
+}

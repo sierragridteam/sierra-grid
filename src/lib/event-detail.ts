@@ -11,15 +11,11 @@ import { telemetryMetrics, telemetrySeries, type TelemetryMetric } from "./mesh-
 import { data, makeContext, type Context } from "./context";
 import { fmt } from "./render";
 import { stateUrl } from "./state";
-import { humanize, reportFields, reportChanges, typeLabel, type Report, type Revision } from "./event-model";
+import { humanize, identifierList, reportFields, reportChanges, typeLabel, type Report, type Revision } from "./event-model";
+export { identifierList };
 
 export const severityTone = (value: string) => ["SEVERE", "EXTREME"].includes(value) ? "alarm" as const : value === "MODERATE" ? "elevated" as const : "muted" as const;
 const displayValue = (value: string) => /^\d{4}-\d\d-\d\dT/.test(value) ? fmt(value) : value;
-/** Source fields that are comma-separated hashes (mesh gateways) are lists of identifiers. */
-export const identifierList = (value: string): string[] | undefined => {
-  const parts = value.split(/\s*,\s*/).filter(Boolean);
-  return parts.length && parts.every(part => /^[0-9a-f]{8,}$/i.test(part)) ? parts : undefined;
-};
 const changeValue = (value: string) => identifierList(value) ?? displayValue(value);
 const diffProps = (revision: Revision, previous: Revision): DataDiffProps => ({
   label: `Update ${revision.revision} · ${fmt(revision.observedAt || revision.ingestedAt)}`,

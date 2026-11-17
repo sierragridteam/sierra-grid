@@ -59,3 +59,16 @@ test("the search query round-trips through the Search URL and is cleaned", () =>
   assert.equal(old.query, "bear");
   assert.equal(new URL(stateUrl(old), "https://grid.test").searchParams.has("q"), false);
 });
+
+test("a list with any key hash in it is a list of identifiers, names included", async () => {
+  const { identifierList } = await import("../src/lib/event-model.ts");
+  const a = "0b0b037985e4980662d3e7862d35aebb4a01642eeca2eee561c5065d05c9acf5", b = "0F0F038DE5FD9631E7C6E6DE50844A69E489DD94681640BB92ED8F1C177FFC13";
+  assert.deepEqual(identifierList(`${a}, ${b}`), [a, b]);
+  assert.deepEqual(identifierList(a), [a], "a lone hash is a list of one");
+  // Gateway lists mix hashes with a reporter's name; that used to fall
+  // through and reach the page as one comma-separated run of hashes.
+  assert.deepEqual(identifierList(`${a}, ${b}, relay`), [a, b, "relay"]);
+  assert.equal(identifierList("Hwy 4, near Arnold"), undefined, "ordinary text with a comma is not a list of identifiers");
+  assert.equal(identifierList("relay"), undefined);
+  assert.equal(identifierList(""), undefined);
+});
