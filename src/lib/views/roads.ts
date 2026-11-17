@@ -5,7 +5,7 @@
  */
 import type { Context } from "../context";
 import { pageHero } from "../hero";
-import { data } from "../context";
+import { data, toPage } from "../context";
 import { fmt, httpUrl } from "../render";
 import { stateUrl } from "../state";
 import { regionTimeZone } from "../time";
@@ -16,10 +16,14 @@ import {
 } from "../road-corridor";
 import { createStore, region } from "@sierragridteam/design-system/lib/region";
 import { html, nothing } from "@sierragridteam/design-system/lib/template";
+import type { Revision } from "../event-model";
+import { RECORD_REFRESH_MS, nextRead, pagedReader, recordWindow, roadRecordPanel, settle, type Read, type RevisionPages } from "../record-model";
 import { badge, card, corridor, feedItem, messageSign, schedule, stat, type CorridorMarker, type StateTone } from "@sierragridteam/design-system/lib/ui";
 import { createGeoMap, type SierraGeoMap } from "@sierragridteam/design-system/lib/geo-map";
 
 const HOUR = 3_600_000, DAY = 24 * HOUR, REFRESH_MS = 120_000;
+/** How far back the road record panel reads. */
+const RECORD_DAYS = 7;
 /** A point counts as on a route within this distance of its line (km). */
 const ON_ROUTE_KM = 1;
 /** Closure points sit at the end of what the source closes; allow more room. */
@@ -34,6 +38,8 @@ type Cameras = Extract<Awaited<ReturnType<Context["client"]["listCameras"]>>, { 
 type Closure = { id: string; headline: string; highway?: string; direction?: string; description?: string; coordinates: Position };
 
 type State = {
+  /** What Grid has on record for the last RECORD_DAYS (from `recordFrom`): not read yet, failed (keeping the last good read) or answered. */
+  record: Read<RevisionPages>; recordFrom: number;
   segments: Segment[]; closures: Closure[]; chains: ChainControl[]; signs: Sign[]; events: RoadEvent[]; cameras?: Cameras;
   chp?: { status: string; lastSuccessAt?: string | null };
   loaded: boolean; errors: string[]; stale: string[]; updatedAt: number; now: number;
@@ -71,7 +77,7 @@ export async function mount(ctx: Context) {
   const { client, state, $, signal } = ctx;
   const recordUrl = (id: string) => stateUrl({ ...state, topic: "events", layer: "ROAD_INCIDENT", record: id, revision: "", compare: "", autoSelect: true, timeExplicit: false } as any);
   const eventsUrl = stateUrl({ ...state, topic: "events", layer: "ROAD_INCIDENT", record: "", timeExplicit: false } as any);
-  const store = createStore<State>({ segments: [], closures: [], chains: [], signs: [], events: [], loaded: false, errors: [], stale: [], updatedAt: 0, now: Date.now() });
+  const store = createStore<State>({ segments: [], closures: [], chains: [], signs: [], events: [], loaded: false, errors: [], stale: [], updatedAt: 0, now: Date.now(), record: { state: "loading" }, recordFrom: 0 });
 
   async function load() {
     const [segments, closures, signs, events, cameras, sources] = await Promise.allSettled([
@@ -124,6 +130,23 @@ export async function mount(ctx: Context) {
       loaded: true, errors, stale: [...new Set(stale)], updatedAt: seg ? Date.now() : prev.updatedAt, now: Date.now(),
     });
   }
+
+  // Chain requirements and road status changes Grid has saved: a storm's sequence after the fact.
+  // Read apart from the live layers and far less often: the period is on whole hours so the request
+  // repeats, and an unchanged answer is a 304. A failure here says so in its own panel and nowhere else.
+  const readRecord = pagedReader<Revision>();
+  async function loadRecord() {
+    const window = recordWindow(Date.now(), RECORD_DAYS);
+    const [result] = await Promise.allSettled([readRecord(`${window.from}/${window.to}`, async (pageToken, etag) =>
+      toPage(await client.listHistory({ place: state.place, layer: ["CHAIN_CONTROL", "ROAD_SEGMENT"], ...window, pageSize: 200, geometryFormat: "NONE", ...(pageToken ? { pageToken } : {}) }, { etag }), (d) => ({ items: d.revisions, next: d.nextPageToken })))]);
+    if (signal.aborted) return;
+    const s = store.get();
+    store.set({
+      recordFrom: result.status === "fulfilled" && result.value !== "unchanged" ? Date.parse(window.from) : s.recordFrom,
+      record: nextRead(s.record, settle(result, (v) => ({ revisions: v.items, incomplete: v.incomplete })), Date.now()),
+    });
+  }
+  const anyRecordUrl = (id: string) => stateUrl({ ...state, topic: "events", layer: "ALL", eventStatus: "all", record: id, revision: "", compare: "", autoSelect: true, timeExplicit: false } as any);
 
   $("content").innerHTML = `<div id="roads-page"></div>`;
   let map: SierraGeoMap | undefined;
@@ -190,6 +213,7 @@ export async function mount(ctx: Context) {
               source: e.provenance.sourceName,
             }))}</div>` : html`<p class="meta">${!s.loaded ? "Loading reports…" : reportsUnknown ? "Road reports are unavailable right now." : "No active road reports."}</p>`}
           ${s.loaded && !chpActive.length ? html`<p class="meta roads-chp-none">${reportsUnknown || (s.chp && s.chp.status !== "OK") || !s.chp ? "CHP traffic incidents could not be checked right now." : "No CHP traffic incidents in the region right now."}</p>` : nothing}`)}
+        ${recordPanel(s, anyRecordUrl)}
         ${card({ variant: "panel", title: "Highway signs", kicker: `${board.showing.reduce((n, x) => n + x.count, 0)} of ${s.signs.length} showing a message`, as: "section", class: "roads-signs" },
           html`${board.showing.length ? html`<div class="roads-sign-grid">${board.showing.map((x) => messageSign({ location: x.location, route: x.route, direction: x.direction, pages: x.pages, inService: x.inService,
               detail: [x.count > 1 ? `${x.count} signs show this` : "", Number.isFinite(x.since) ? `since ${fmt(x.since)}` : ""].filter(Boolean).join(" · ") }))}</div>` : html`<p class="meta">${s.loaded ? "No sign is showing a message." : "Loading signs…"}</p>`}
@@ -224,9 +248,11 @@ export async function mount(ctx: Context) {
   await load();
   // Left during the first load: start nothing that would outlive the page.
   if (signal.aborted) return;
+  void loadRecord();
   const refresh = setInterval(() => void load(), REFRESH_MS);
+  const refreshRecord = setInterval(() => void loadRecord(), RECORD_REFRESH_MS);
   const tick = setInterval(() => store.set({ now: Date.now() }), 30_000);
-  signal.addEventListener("abort", () => { clearInterval(refresh); clearInterval(tick); });
+  signal.addEventListener("abort", () => { clearInterval(refresh); clearInterval(refreshRecord); clearInterval(tick); });
 }
 
 /**
@@ -234,6 +260,23 @@ export async function mount(ctx: Context) {
  * row named by the work and its place: the route is the group heading, so it
  * is not repeated on every row.
  */
+const when = (at: number) => html`<time datetime=${new Date(at).toISOString()}>${fmt(at)}</time>`;
+/** "On record": what `roadRecordPanel` decided, rendered. */
+function recordPanel(s: State, url: (id: string) => string) {
+  const panel = roadRecordPanel(s.record, RECORD_DAYS, s.recordFrom);
+  if (!panel) return nothing;
+  return card({ variant: "panel", title: "On record", kicker: panel.kicker, as: "section", class: "roads-record" },
+    panel.entries.length ? html`
+      ${panel.staleAsOf ? html`<p class="meta">The record could not be refreshed; this is as of ${when(panel.staleAsOf)}.</p>` : nothing}
+      <ul class="roads-record-list">${panel.entries.map((e) => html`<li>
+        <span class="meta roads-record__when">${when(e.at)}</span>
+        ${badge(e.badge.label, { tone: e.badge.tone })}
+        <a href=${url(e.id)}>${e.label}</a>${e.detail ? html`<span class="meta">${e.detail}</span>` : nothing}
+      </li>`)}</ul>${panel.note ? html`<p class="meta">${panel.note}</p>` : nothing}
+      <p class="meta">What Grid saved as it happened, newest first. Posted times are Caltrans's; the rest are when Grid saw the change.</p>`
+      : html`<p class="meta">${panel.message}</p>`);
+}
+
 function scheduleRows(jobs: ReturnType<typeof workJobs>, chains: Chain[], now: number, recordUrl: (id: string) => string) {
   const order = chains.map((c) => c.route);
   const rank = (route: string) => (order.includes(route) ? order.indexOf(route) : 100 + (Number(/\d+/.exec(route)?.[0]) || 0));

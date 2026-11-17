@@ -29,6 +29,13 @@ test("the report browser's count line says what is loaded and in what order", ()
   assert.equal(m.countLine({ ...plain, loaded: 7 }), "7 reports · newest received first");
   assert.equal(m.countLine({ ...plain, loaded: 1 }), "1 report · newest received first");
   assert.equal(m.countLine({ ...plain, archive: true, loaded: 20 }), "20 revisions · newest reported first");
+  // The Overview counts events only; the list it links to says how its own total divides.
+  assert.equal(m.countLine({ ...plain, loaded: 31, standing: 6, standingTypes: ["Burn day", "Road status"] }), "31 reports · 25 events and 6 standing status reports (burn day, road status) · newest received first");
+  assert.equal(m.countLine({ ...plain, loaded: 5, standing: 1, standingTypes: ["Road status"] }), "5 reports · 4 events and 1 standing status report (road status) · newest received first");
+  assert.equal(m.countLine({ ...plain, loaded: 50, more: true, standing: 6, standingTypes: ["Road status"] }), "50 reports loaded · more available · 44 events and 6 standing status reports (road status) · newest received first");
+  assert.equal(m.countLine({ ...plain, loaded: 4, standing: 4, standingTypes: ["Road status"] }), "4 reports · all standing status (road status), not events · newest received first");
+  assert.equal(m.countLine({ ...plain, loaded: 7, standing: 0, standingTypes: [] }), "7 reports · newest received first");
+  assert.equal(m.countLine({ ...plain, archive: true, loaded: 20, standing: 3 }), "20 revisions · newest reported first", "revisions are not divided");
   assert.equal(m.countLine({ ...plain, loading: true }), "Loading reports…");
   assert.equal(m.countLine({ ...plain, error: true }), "Reports unavailable");
 });

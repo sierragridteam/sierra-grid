@@ -13,9 +13,9 @@ import { stateUrl, defaults } from "../state";
 import { mountRoadOverview } from "./road-map";
 import { weatherPreferences, rememberWeather, temperature, temperatureText, resolved, weatherIconName, type TemperatureUnit } from "../weather-display";
 import { regionTimeZone } from "../time";
-import { headlineCounts, type Report } from "../event-model";
-/** Mesh node records are network observations, not events; the mesh has its own stat. */
-const eventsOnly = (reports: Report[]) => reports.filter(report => report.layer !== "MESH");
+import { headlineCounts, isOccurrence, type Report } from "../event-model";
+/** Standing state (a mesh node, a road that is open, a burn answer) is not an event; the API says which reports are. */
+const eventsOnly = (reports: Report[]) => reports.filter(isOccurrence);
 
 import type { RoadLayer, RoadFeature } from "./road-map-model";
 const signText = (f: RoadFeature) => (f.properties.messageSign?.pages ?? []).some(page => page.some(line => line.trim()));

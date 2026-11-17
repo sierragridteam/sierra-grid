@@ -7,10 +7,30 @@ export type Revision = Extract<Awaited<ReturnType<Context["client"]["getEventHis
 export const eventTypes = [
   ["ALL", "All types"], ["WILDFIRE", "Wildfires"], ["ROAD_INCIDENT", "Roads"],
   ["WEATHER_ALERT", "Weather notices"], ["POWER", "Power"], ["EVACUATION", "Evacuations"],
-  ["BURN_STATUS", "Burn day"], ["MESH", "Mesh"],
+  ["BURN_STATUS", "Burn day"], ["CHAIN_CONTROL", "Chain control"], ["ROAD_SEGMENT", "Road status"], ["MESH", "Mesh"],
 ] as const;
+/** Layers with a name but no place in the type filter: their reports are in no place. */
+const otherTypes: Record<string, string> = { SOURCE_HEALTH: "Source health" };
+/**
+ * Whether a report is something happening (an incident, an alert, a chain
+ * requirement) rather than the standing state of a tracked thing (a monitored
+ * road, a burn answer, a mesh node, a feed's health). The API says which
+ * (`nature`); an API that predates the field says nothing, and then only mesh
+ * nodes are taken as state, as Grid did before the field existed.
+ */
+export function isOccurrence(report: { nature?: string | null; layer: string }) {
+  const said = report.nature && report.nature !== "EVENT_NATURE_UNSPECIFIED";
+  return said ? report.nature !== "STATE" : report.layer !== "MESH";
+}
+/** A list of reports split into what is happening and what is standing state, with the kinds of the latter named. */
+export function natureCounts(reports: { nature?: string | null; layer: string }[]) {
+  const standing = reports.filter(report => !isOccurrence(report));
+  return { occurrences: reports.length - standing.length, standing: standing.length, standingTypes: [...new Set(standing.map(report => typeLabel(report.layer)))] };
+}
+/** A revision saved because a reading confirmed the state, not because anything changed. */
+export const isReading = (revision?: { kind?: string } | null) => revision?.kind === "READING";
 export const severityRank: Record<string, number> = { EXTREME: 4, SEVERE: 3, MODERATE: 2, MINOR: 1, INFO: 0 };
-export const typeLabel = (type: string) => eventTypes.find(([id]) => id === type)?.[1] || humanize(type);
+export const typeLabel = (type: string) => eventTypes.find(([id]) => id === type)?.[1] || otherTypes[type] || humanize(type);
 export function humanize(value: string) {
   return value.replace(/^(BURN_PERMISSION_|BURN_DAY_|CALFIRE_|EVACUATION_LEVEL_)/, "")
     .replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ").toLowerCase().replace(/^./, c => c.toUpperCase());
@@ -75,7 +95,8 @@ export function reportFields(report: Report): Record<string, string> {
   add("Status", humanize(report.status)); add("Severity", humanize(report.severity));
   add("Headline", report.headline); add("Summary", report.summary); add("Area", report.areaLabel);
   add("Original report", report.description);
-  const detail = report.wildfire || report.power || report.evacuation || report.weatherAlert || report.earthquake || report.roadIncident || report.burnStatus || report.mesh;
+  const detail = report.wildfire || report.power || report.evacuation || report.weatherAlert || report.earthquake || report.roadIncident || report.burnStatus || report.mesh
+    || report.chainControl || report.roadSegment || report.sourceHealth;
   const labels: Record<string, string> = { acres: "Area (acres)", containment: "Containment (%)", depthKm: "Depth (km)", customersAffected: "Customers affected", estimatedRestoration: "Estimated restoration", plannedStart: "Planned start", plannedEnd: "Planned end", areaDesc: "Affected area", permission: "Burn permission", calfireObservedAt: "CAL FIRE report time" };
   const walk = (object: Record<string, unknown>, prefix = "") => {
     for (const [key, value] of Object.entries(object)) {

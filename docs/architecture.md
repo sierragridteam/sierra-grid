@@ -87,6 +87,61 @@ and not none.
 (a mesh node's monitor readings are dated, and a repeater read on schedule is
 not called late). Reports of other types fall back to a generic view.
 
+## What Grid has on record
+
+Some reports are the standing state of a tracked thing, which the API revises
+when it changes: a monitored road (`ROAD_SEGMENT`), a county's burn answer
+(`BURN_STATUS`), an upstream feed's health (`SOURCE_HEALTH`, in no place), a
+mesh node. Others are something happening (an incident, an alert, a chain
+requirement). The API says which with `nature` (`STATE` or `OCCURRENCE`), and
+Grid keeps no list of its own: `isOccurrence` in `event-model.ts` reads it and
+falls back to "everything but mesh nodes" only for an API that predates the
+field. The Overview counts occurrences. Events lists every report, and its
+count line says how the total divides ("32 reports · 26 events and 6 standing
+status reports (road status, burn day)"), so the two do not disagree.
+
+`record-model.ts` reads revisions into what happened. Source health lists each
+feed's status changes and since when it has held its status; Roads lists chain
+requirements posted, changed and lifted, and roads closing and reopening, over
+the last week. It decides every word of those panels, including each entry's
+badge (label and tone, in the page's own vocabulary). The rules:
+
+- A read of the record is not read yet, failed, or answered (`Read`). No panel
+  while it is not read; a panel that says the record could not be read when it
+  failed; "no uptime history is kept" only when both reads answered and held
+  nothing. A failed refresh keeps the last list with "could not be refreshed;
+  as of …", and drops every "since" that came from the failed read.
+- An entry says what changed only when the revision before it is loaded.
+  Without it, it says the state ("R2 in effect") and claims no change. A
+  chain-control event is a slot per highway and level, so "posted again" is an
+  ordinary entry.
+- A period is claimed only when recording covers it. Revision 1 of a standing
+  state is where recording began: a health event never revised shows
+  "recorded since", and a period that recording began inside is described as
+  "since recording began on …", not "the last 30 days".
+- The record is read up to `RECORD_PAGES` pages. If the service still has
+  more, the panel says older entries are not loaded and gives no count.
+- The record is read every ten minutes (`RECORD_REFRESH_MS`), apart from the
+  live data. Its period is on whole hours so the request repeats, and the last
+  ETag is sent so an unchanged answer is a 304 that changes nothing. (A
+  browser can read the ETag only if the API exposes it across origins; where
+  it does not, the repeated URL still lets the browser's own cache revalidate.)
+
+A revision has a kind. A report's own history asks for both (`CHANGE` and
+`READING`) and shows a reading as "checked; the answer did not change" with
+the call it records (`readingCalls`: the burn lines whose call moved since the
+revision before); lists of revisions elsewhere show changes only.
+
+`reportProfile` is told whether the loaded revisions are the report's whole
+history (`complete`: every page loaded, none pending or failed). A duration is
+exact only when the revision where the state changed is loaded; otherwise it
+is "at least" as long as the loaded revisions reach, or omitted. "First saved
+by Grid" is shown only when revision 1 is loaded.
+
+A development server can read another API (`PUBLIC_GRID_API_ORIGIN`, for a
+sierra-data change that is not deployed). The switch is compiled out of a
+production build.
+
 ## Lifecycle
 
 Static pages use Astro's `ClientRouter`. `page.ts` uses the design system's

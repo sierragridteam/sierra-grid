@@ -5,7 +5,7 @@
  * renders it with design-system components.
  */
 import type { Report, Revision } from "./event-model.ts";
-import { humanize } from "./event-model.ts";
+import { humanize, isReading } from "./event-model.ts";
 import { regionTimeZone } from "./time.ts";
 import { OTHER_OVERDUE, REPEATER_EVERY, REPEATER_OVERDUE, onRelaySchedule } from "./mesh-monitors.ts";
 
@@ -102,10 +102,43 @@ function changes(revisions: Revision[], fields: (report: Report) => Record<strin
   return out;
 }
 
-const firstSaved = (revisions: Revision[], report: Report) => {
+/**
+ * When Grid first saved the report: its revision 1. Not known (NaN) while that
+ * revision is not among the loaded ones, because the oldest loaded revision of
+ * a truncated history is not the first save.
+ */
+export const firstSaved = (revisions: Revision[], report: Report) => {
   const first = [...revisions].sort((a, b) => Number(a.revision) - Number(b.revision))[0];
-  return ms(first?.ingestedAt || report.ingestedAt);
+  if (first) return Number(first.revision) === 1 ? ms(first.ingestedAt || first.observedAt) : NaN;
+  return Number(report.revision) === 1 ? ms(report.ingestedAt) : NaN;
 };
+
+/**
+ * Since when a standing state has held its current value, as far as the
+ * loaded revisions can say. `changed`: the revision where it took the value
+ * is loaded, so the time is known (on Grid's clock). Otherwise the value has
+ * held through everything loaded, which is a lower bound: `recorded` when
+ * that reaches revision 1 (where recording began), `loaded` when history is
+ * truncated, still loading or failed.
+ */
+type Held = { at: number; kind: "changed" | "recorded" | "loaded" };
+function heldSince<T>(revisions: Revision[], value: (report: Report) => T, current: T, complete: boolean): Held | undefined {
+  const ordered = [...revisions].sort((a, b) => Number(b.revision) - Number(a.revision));
+  if (!ordered.length || value(ordered[0].event) !== current) return undefined;
+  let i = 0;
+  while (i + 1 < ordered.length && value(ordered[i + 1].event) === current) i++;
+  const at = ms(ordered[i].ingestedAt || ordered[i].observedAt);
+  if (!Number.isFinite(at)) return undefined;
+  return { at, kind: i + 1 < ordered.length ? "changed" : complete && Number(ordered[i].revision) === 1 ? "recorded" : "loaded" };
+}
+const heldNote = (held: Held) => (held.kind === "changed" ? `since ${dayLabel.format(held.at)}` : held.kind === "recorded" ? `on record since ${dayLabel.format(held.at)}` : "earlier history not loaded");
+/** A timeline's own admission that it starts part-way: the oldest loaded revision is not the beginning. */
+const notLoaded = (revisions: Revision[], complete: boolean): Entry[] => {
+  if (complete || !revisions.length) return [];
+  const oldest = [...revisions].sort((a, b) => Number(a.revision) - Number(b.revision))[0];
+  return Number(oldest.revision) === 1 ? [] : [{ at: ms(oldest.ingestedAt || oldest.observedAt), label: "Earlier history not loaded", kind: "system" }];
+};
+
 /**
  * When the source says it happened. Version timestamps are Grid's clock, so a
  * candidate later than Grid's first save is not a report time and is dropped.
@@ -436,7 +469,7 @@ const phone = (v?: string) => (v && /^\+1\d{10}$/.test(v) ? `(${v.slice(2, 5)}) 
  * timeline lists only transitions (burn day, permission, CAL FIRE status)
  * within BURN_WINDOW_DAYS, and counts older ones.
  */
-function burnStatus(report: Report, revisions: Revision[], now: number): Profile {
+function burnStatus(report: Report, revisions: Revision[], now: number, complete: boolean): Profile {
   const b = report.burnStatus as BurnStatus;
   const lines = b.burnLines ?? [];
   const read = lines.map((l) => l.observation).filter((o): o is BurnObservation => !!o?.observedAt);
@@ -449,8 +482,9 @@ function burnStatus(report: Report, revisions: Revision[], now: number): Profile
   const transitions = changes(revisions, fields)
     .filter((e) => !/: Unknown$/.test(e.label) && !/^was Unknown/.test(e.detail ?? ""))
     .map((e) => ({ ...e, kind: "source" as const, detail: e.detail?.replace(" · seen by Grid", "") }));
-  // Since when has "Burning: <now>" held? The latest transition of the permission, else the first save.
-  const since = [...transitions].reverse().find((e) => e.label.startsWith("Burning:"))?.at ?? firstSaved(revisions, report);
+  // Since when has "Burning: <now>" held? Known when the revision where it took this value is loaded;
+  // otherwise only "at least" as long as the loaded revisions reach.
+  const held = heldSince(revisions, (e) => (e.burnStatus as BurnStatus | undefined)?.permission, b.permission, complete);
   const cutoff = now - BURN_WINDOW_DAYS * DAY;
   const recent = transitions.filter((e) => e.at >= cutoff), older = transitions.length - recent.length;
   const first = lines.find((l) => l.observation?.message);
@@ -460,8 +494,8 @@ function burnStatus(report: Report, revisions: Revision[], now: number): Profile
     stats: [
       { label: "Burning today", value: permissionText(b.permission), sub: b.permission === "BURN_PERMISSION_ALLOWED" ? "Air district and CAL FIRE both permit" : b.permission === "BURN_PERMISSION_PROHIBITED" ? "Either authority prohibits it" : "One authority could not be read" },
       { label: "Air district", value: burnDayText(b.burnDay), sub: Number.isFinite(latestRead) ? `Burn line read ${clock.format(latestRead)} PT` : "No reading today" },
-      { label: "CAL FIRE", value: calfireText(b.calfireStatus), sub: [b.calfireArea, b.calfireEffective ? `since ${dayLabel.format(ms(b.calfireEffective))}` : ""].filter(Boolean).join(" · ") || undefined },
-      { label: "Unchanged for", value: Number.isFinite(since) ? duration(now - since) : "Not known", sub: Number.isFinite(since) ? `since ${dayLabel.format(since)}` : undefined },
+      { label: "CAL FIRE", value: calfireText(b.calfireStatus), sub: [b.calfireStatus === "CALFIRE_BURNING_ALLOWED" ? "CAL FIRE is not restricting; the air district decides" : "", b.calfireArea, b.calfireEffective ? `since ${dayLabel.format(ms(b.calfireEffective))}` : ""].filter(Boolean).join(" · ") || undefined },
+      { label: "Unchanged for", value: held ? `${held.kind === "changed" ? "" : "At least "}${duration(now - held.at)}` : "Not known", sub: held ? heldNote(held) : undefined },
     ],
     sections: [
       ...lines.map((l) => ({ title: l.name || "Burn line", items: [
@@ -482,21 +516,194 @@ function burnStatus(report: Report, revisions: Revision[], now: number): Profile
     ...moments([
       ...recent,
       ...(older > 0 ? [{ at: cutoff, label: `${plural(older, "earlier change")} not shown`, kind: "system" as const }] : []),
+      ...notLoaded(revisions, complete),
+      // Calls that repeated the answer: each is on record, and none is a change.
+      ...burnReadings(revisions).filter((e) => e.at >= cutoff && e.at !== latestRead),
       ...(Number.isFinite(latestRead) ? [{ at: latestRead, label: `Burn line: ${burnDayText(b.burnDay)}`, detail: "today's reading" }] : []),
     ], now),
   };
 }
 
-const PROFILES: Partial<Record<string, (report: Report, revisions: Revision[], now: number) => Profile>> = {
+export type ReadingCall = { at: number; line: string; answer: string; message?: string };
+/**
+ * Which call a burn reading records: the line or lines whose call is newer
+ * than in the revision before it (one revision can carry two lines' calls),
+ * oldest first. Without that revision, the line called last. Empty when no
+ * line's call moved (the reading was of something else).
+ */
+export function readingCalls(revision: Revision, previous?: Revision): ReadingCall[] {
+  const called = (l: BurnLine) => ms(l.observation?.observedAt);
+  const lines = ((revision.event.burnStatus as BurnStatus | undefined)?.burnLines ?? []).filter((l) => Number.isFinite(called(l)));
+  const known = !!previous && Number(previous.revision) === Number(revision.revision) - 1;
+  const before = new Map((((previous?.event.burnStatus as BurnStatus | undefined)?.burnLines) ?? []).map((l) => [l.id, called(l)]));
+  const picked = known ? lines.filter((l) => !(called(l) <= (before.get(l.id) ?? -Infinity))) : [...lines].sort((x, y) => called(y) - called(x)).slice(0, 1);
+  return picked.sort((x, y) => called(x) - called(y))
+    .map((l) => ({ at: called(l), line: l.name || l.id || "Burn line", answer: burnDayText(l.burnDay), message: l.observation?.message || undefined }));
+}
+
+/**
+ * The calls that confirmed a burn answer without changing it (READING
+ * revisions), each at the time of the call.
+ */
+export function burnReadings(revisions: Revision[]): Entry[] {
+  const byNumber = new Map(revisions.map((r) => [Number(r.revision), r]));
+  return revisions.filter((r) => isReading(r)).flatMap((r) =>
+    readingCalls(r, byNumber.get(Number(r.revision) - 1)).reverse().map((call) => ({ at: call.at, label: `Checked: ${call.answer}`, detail: call.message || call.line })));
+}
+
+type ChainPlace = { place?: string };
+type ChainControl = { level?: string; highway?: string; direction?: string; from?: ChainPlace; to?: ChainPlace; inferred?: boolean; signs?: { id?: string; place?: string; direction?: string; level?: string; since?: string | null }[] };
+const chainRequirement = (level?: string) => ({ R1: "Chains or snow tires", R2: "Chains, or 4WD with snow tires", R3: "Chains on every vehicle" } as Record<string, string>)[level ?? ""] ?? "Chain control";
+const chainExtent = (c?: ChainControl) => (!c?.from?.place ? "" : !c.to?.place || c.to.place.toLowerCase() === c.from.place.toLowerCase() ? c.from.place : `${c.from.place} to ${c.to.place}`);
+
+/**
+ * A chain requirement on a stretch of highway. Its event is a slot (one per
+ * highway and level): ACTIVE while Caltrans posts it, not ACTIVE once lifted,
+ * and ACTIVE again in a new revision the next time. The timeline is read from
+ * the revisions: each posting, each time the stretch changed while posted,
+ * and each lifting.
+ */
+function chainControl(report: Report, revisions: Revision[], now: number, complete: boolean): Profile {
+  const c = report.chainControl as ChainControl;
+  const signs = c.signs ?? [];
+  const level = c.level || "Chain control";
+  const began = ms(report.effective), ended = report.status === "ACTIVE" ? NaN : ms(report.observedAt);
+  const stamp = (t: number) => `${dayLabel.format(t)}, ${clock.format(t)}`;
+  const ordered = [...revisions].sort((a, b) => Number(a.revision) - Number(b.revision));
+  const entries: Entry[] = [];
+  ordered.forEach((r, i) => {
+    const e = r.event, v = e.chainControl as ChainControl | undefined, n = Number(r.revision);
+    const before = i > 0 && Number(ordered[i - 1].revision) === n - 1 ? ordered[i - 1].event : undefined;
+    const was = before?.chainControl as ChainControl | undefined;
+    const seen = ms(r.ingestedAt || r.observedAt), name = v?.level || "Chain control";
+    if (e.status !== "ACTIVE") {
+      if (!before || before.status === "ACTIVE") entries.push({ at: seen, label: "Lifted", detail: "no longer listed by Caltrans", kind: "system" });
+    } else if (n === 1) entries.push({ at: ms(e.effective) || seen, label: `${name} posted`, detail: chainExtent(v) });
+    else if (before && before.status !== "ACTIVE") entries.push({ at: ms(e.effective) > ms(before.effective) ? ms(e.effective) : seen, label: `${name} posted again`, detail: chainExtent(v) });
+    // Timed by when Grid saw the new stretch, so it is Grid's clock, not the source's.
+    else if (before && chainExtent(v) && chainExtent(was) !== chainExtent(v)) entries.push({ at: seen, label: `Now ${chainExtent(v)}`, detail: `${chainExtent(was) ? `was ${chainExtent(was)} · ` : ""}seen by Grid`, kind: "system" });
+  });
+  // What the report itself says of the current posting, when no loaded revision already does.
+  // Without that revision the stretch it was posted with is not known (today's may differ), so none is given.
+  if (Number.isFinite(began) && !entries.some((e) => e.at === began && /posted/.test(e.label))) entries.push({ at: began, label: `${level} posted` });
+  if (Number.isFinite(ended) && !entries.some((e) => e.label === "Lifted" && Math.abs(e.at - ended) < 60_000)) entries.push({ at: ended, label: "Lifted", detail: "no longer listed by Caltrans", kind: "system" });
+  return {
+    subtitle: [c.highway, chainExtent(c), c.direction].filter(Boolean).join(" · "),
+    // Caltrans's own time for the posting; the lifting is when Grid stopped seeing it listed.
+    when: Number.isFinite(ended) ? `Lifted ${stamp(ended)} PT` : Number.isFinite(began) ? `Posted ${stamp(began)} PT` : undefined,
+    place: c.from?.place,
+    stats: [
+      { label: "Requirement", value: c.level || "Not given", sub: chainRequirement(c.level) },
+      { label: report.status === "ACTIVE" ? "In effect for" : "Was in effect", value: Number.isFinite(began) ? duration((Number.isFinite(ended) ? ended : now) - began) : "Not known",
+        sub: !Number.isFinite(began) ? undefined : Number.isFinite(ended) ? `from ${stamp(began)} to ${stamp(ended)} PT` : `since ${stamp(began)} PT` },
+      { label: "Checkpoints", value: String(signs.length), sub: c.inferred ? "Stretch inferred from nearby signs" : "Signed by Caltrans" },
+    ],
+    // Once lifted, the signs are as they last stood: no "since", which would read as still showing.
+    sections: [{ title: Number.isFinite(ended) ? "Checkpoints when last posted" : "Checkpoints", items: signs.map((s) => ({ label: [text(String(s.place || "Checkpoint").toLowerCase()), s.direction].filter(Boolean).join(" · "), value: [s.level, s.since ? `${Number.isFinite(ended) ? "from" : "since"} ${clock.format(ms(s.since))}` : ""].filter(Boolean).join(" · ") })) }],
+    identifiers: [],
+    ...moments([
+      { at: firstSaved(revisions, report), label: "First saved by Grid", kind: "system" },
+      ...notLoaded(revisions, complete),
+      ...entries,
+    ], now),
+  };
+}
+
+type RoadSegment = { roadId?: string; name?: string; section?: string; status?: string; beyond?: { name?: string; side?: string; status?: string }[] };
+const roadStatusText = (v?: string) => ({ OPEN: "Open", CLOSED: "Closed", RESTRICTED: "Restricted", MAINTENANCE: "Roadwork" } as Record<string, string>)[v ?? ""] ?? "Not known";
+
+/**
+ * A monitored road: an event that never ends, revised when the road closes or
+ * reopens or a seasonal closure past its end starts or ends. The timeline is
+ * those changes. How long it has had its status is known only when the
+ * revision where it changed is loaded; otherwise it is "at least" as long as
+ * the record reaches.
+ */
+function roadSegment(report: Report, revisions: Revision[], now: number, complete: boolean): Profile {
+  const r = report.roadSegment as RoadSegment;
+  const fields = (e: Report) => {
+    const v = e.roadSegment as RoadSegment | undefined;
+    return { Road: v ? roadStatusText(v.status) : undefined, "Past the end": v ? (v.beyond ?? []).map((b) => b.name).filter(Boolean).join("; ") || "No seasonal closure" : undefined };
+  };
+  const all = changes(revisions, fields).filter((e) => !/^(Status|Severity):/.test(e.label));
+  const held = heldSince(revisions, (e) => (e.roadSegment as RoadSegment | undefined)?.status, r.status, complete);
+  const cutoff = now - BURN_WINDOW_DAYS * DAY;
+  const recent = all.filter((e) => e.at >= cutoff), older = all.length - recent.length;
+  return {
+    subtitle: [r.name, r.section].filter(Boolean).join(" · "),
+    // A standing state has no report time: say how long it has stood, as far as that is known.
+    when: !held ? "Monitored road" : held.kind === "changed" ? `${roadStatusText(r.status)} since ${dayLabel.format(held.at)}, ${clock.format(held.at)} PT` : `${roadStatusText(r.status)} for at least ${duration(now - held.at)}`,
+    stats: [
+      { label: "Road", value: roadStatusText(r.status), sub: !held ? undefined : held.kind === "changed" ? `for ${duration(now - held.at)}, ${heldNote(held)}` : `for at least ${duration(now - held.at)} · ${heldNote(held)}` },
+      ...(r.beyond ?? []).map((b) => ({ label: b.side === "START" ? "Before the start" : "Past the end", value: roadStatusText(b.status), sub: b.name })),
+    ],
+    sections: [],
+    identifiers: [],
+    ...moments([
+      { at: firstSaved(revisions, report), label: "First saved by Grid", kind: "system" },
+      ...notLoaded(revisions, complete),
+      ...recent,
+      ...(older > 0 ? [{ at: cutoff, label: `${plural(older, "earlier change")} not shown`, kind: "system" as const }] : []),
+    ], now),
+  };
+}
+
+type SourceHealth = { sourceId?: string; status?: string; since?: string; error?: string; lastSuccessAt?: string | null };
+/** The Sources page's word for a status; one this build does not know is shown as sent, not as "not read". */
+export const sourceStatusText = (v?: string) => ({ OK: "Current", STALE: "Stale", UNAVAILABLE: "Unavailable" } as Record<string, string>)[v ?? ""]
+  ?? (v && !/UNSPECIFIED|UNKNOWN/.test(v) ? humanize(v) : "Not read yet");
+
+/**
+ * One upstream feed's health: an event that never ends and is revised only
+ * when the feed's status changes, so its timeline is the feed's outages.
+ *
+ * `since` is when the status began only once the event has been revised. At
+ * revision 1 it is when Grid began recording the feed, so the status is "at
+ * least" that old. `lastSuccessAt` is frozen at the last change (the event is
+ * not revised while the feed stays healthy), so it is only the last good
+ * reading before an outage, and says nothing about a current feed.
+ */
+function sourceHealth(report: Report, revisions: Revision[], now: number, complete: boolean): Profile {
+  const h = report.sourceHealth as SourceHealth;
+  const since = ms(h.since), recordedOnly = Number(report.revision) === 1;
+  const ordered = [...revisions].sort((a, b) => Number(a.revision) - Number(b.revision));
+  const turns: Entry[] = ordered.map((r) => {
+    const v = r.event.sourceHealth as SourceHealth | undefined;
+    return { at: ms(v?.since) || ms(r.observedAt), label: Number(r.revision) === 1 ? `Recording began: ${sourceStatusText(v?.status).toLowerCase()}` : sourceStatusText(v?.status), detail: v?.error || undefined, kind: "system" as const };
+  });
+  const stamp = Number.isFinite(since) ? `${dayLabel.format(since)}, ${clock.format(since)} PT` : "";
+  const good = ms(h.lastSuccessAt);
+  return {
+    when: Number.isFinite(since) ? `${sourceStatusText(h.status)} for ${recordedOnly ? "at least " : ""}${duration(now - since)}` : undefined,
+    stats: [
+      { label: "Status", value: sourceStatusText(h.status), sub: stamp ? `${recordedOnly ? "recorded since" : "since"} ${stamp}` : undefined },
+      ...(h.status === "OK" ? [] : [{ label: "Last good reading", value: Number.isFinite(good) ? ago(good, now) : "None on record", sub: "before this status began" }]),
+      // Revisions that only confirmed the state (readings) are not changes, nor is where recording began.
+      { label: "Changes on record", value: String(Math.max(0, Number(report.revision) - (Number(report.readings) || 0) - 1)) },
+    ],
+    sections: h.error ? [{ title: "Reason given", items: [{ label: "Error", value: h.error }] }] : [],
+    identifiers: [],
+    ...moments([...notLoaded(revisions, complete), ...turns], now),
+  };
+}
+
+const PROFILES: Partial<Record<string, (report: Report, revisions: Revision[], now: number, complete: boolean) => Profile>> = {
   WILDFIRE: wildfire, POWER: power, EVACUATION: evacuation, WEATHER_ALERT: weatherAlert, MESH: meshNode, BURN_STATUS: burnStatus,
+  CHAIN_CONTROL: chainControl, ROAD_SEGMENT: roadSegment, SOURCE_HEALTH: sourceHealth,
 };
 
-/** The profile for a report's type, or undefined (render generic details instead). */
-export function reportProfile(report: Report, revisions: Revision[] = [], now = Date.now()): Profile | undefined {
-  const detail = { WILDFIRE: report.wildfire, POWER: report.power, EVACUATION: report.evacuation, WEATHER_ALERT: report.weatherAlert, MESH: report.mesh, BURN_STATUS: report.burnStatus }[report.layer as string];
+/**
+ * The profile for a report's type, or undefined (render generic details instead).
+ *
+ * `complete` says whether `revisions` is the report's whole history (every
+ * page loaded, no load pending or failed). When it is not, a profile does not
+ * state a duration or a beginning the loaded part cannot support.
+ */
+export function reportProfile(report: Report, revisions: Revision[] = [], now = Date.now(), { complete = true }: { complete?: boolean } = {}): Profile | undefined {
+  const detail = { WILDFIRE: report.wildfire, POWER: report.power, EVACUATION: report.evacuation, WEATHER_ALERT: report.weatherAlert, MESH: report.mesh, BURN_STATUS: report.burnStatus, CHAIN_CONTROL: report.chainControl, ROAD_SEGMENT: report.roadSegment, SOURCE_HEALTH: report.sourceHealth }[report.layer as string];
   const profile = report.layer === "ROAD_INCIDENT" && report.roadIncident
     ? (report.roadIncident.closure ? roadClosure : roadIncident)(report, revisions, now)
-    : detail ? PROFILES[report.layer]?.(report, revisions, now) : undefined;
+    : detail ? PROFILES[report.layer]?.(report, revisions, now, complete) : undefined;
   if (!profile) return undefined;
   // Absence of information is not a callout: drop unknown tiles (keep at least one).
   const known = profile.stats.filter((stat) => !/^(not reported|not given|unknown|none reported)$/i.test(stat.value));

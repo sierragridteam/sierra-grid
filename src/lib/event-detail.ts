@@ -4,14 +4,14 @@ import { createStore, region } from "@sierragridteam/design-system/lib/region";
 import { defineDataDiff, type DataDiffProps } from "@sierragridteam/design-system/lib/data-diff";
 import { defineGeoMap, type GeoMapProps } from "@sierragridteam/design-system/lib/geo-map";
 import { callout, closeLink, progress, propertyList, recordHeader, segmented, stat, timeline, trendList, type PropertyItem } from "@sierragridteam/design-system/lib/ui";
-import { genericTimeline, nearPlace, reportProfile } from "./report-profile";
+import { firstSaved, genericTimeline, nearPlace, readingCalls, reportProfile } from "./report-profile";
 import { defineSparkline } from "@sierragridteam/design-system/lib/sparkline";
 import type { V1MeshTelemetryArchive } from "@sierragridteam/sdk";
 import { telemetryMetrics, telemetrySeries, type TelemetryMetric } from "./mesh-telemetry";
 import { data, makeContext, type Context } from "./context";
 import { fmt } from "./render";
 import { stateUrl } from "./state";
-import { humanize, identifierList, reportFields, reportChanges, typeLabel, type Report, type Revision } from "./event-model";
+import { humanize, identifierList, isReading, reportChanges, reportFields, typeLabel, type Report, type Revision } from "./event-model";
 export { identifierList };
 
 export const severityTone = (value: string) => ["SEVERE", "EXTREME"].includes(value) ? "alarm" as const : value === "MODERATE" ? "elevated" as const : "muted" as const;
@@ -45,6 +45,8 @@ const groupFields = (fields: [string, string][]) => {
 const recentUpdates = 5;
 /** A titled card grouping one section of the report. */
 const block = (title: string, body: unknown, actions?: unknown) => html`<section class="card report-block">${actions ? html`<div class="report-block__head"><h3>${title}</h3>${actions}</div>` : html`<h3>${title}</h3>`}${body}</section>`;
+/** A report's own history shows its readings too; lists of revisions elsewhere show changes. */
+const EVERY_KIND: ("CHANGE" | "READING")[] = ["CHANGE", "READING"];
 export type DetailClose = { href: () => string; onClose: () => void };
 
 /** A mesh node's monitor telemetry for the Measurements card. */
@@ -72,11 +74,17 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     const version = (revision: Revision, index: number) => {
       const previous = ordered[index + 1], changes = previous ? diffProps(revision, previous) : undefined;
       const label = `Update ${revision.revision} · ${fmt(revision.observedAt || revision.ingestedAt)}`;
+      // A reading was saved because the source was checked and its answer held.
+      if (isReading(revision)) return html`<article class=${`report-version${String(revision.revision) === s.revision ? " is-selected" : ""}`}>
+        <p class="ds-diff-label">Reading ${revision.revision} · ${fmt(revision.observedAt || revision.ingestedAt)}</p>
+        <p class="meta">Checked; the answer did not change.${readingCalls(revision, previous).map(call => call.message ? ` “${call.message}”` : "")}</p>
+      </article>`;
       return html`<article class=${`report-version${String(revision.revision) === s.revision ? " is-selected" : ""}`}>
         ${changes?.changes.length ? html`<sierra-data-diff .props=${changes}></sierra-data-diff>` : !previous && !s.next ? html`<p class="ds-diff-label">First saved · ${fmt(revision.ingestedAt || revision.observedAt)}</p>` : html`<p class="ds-diff-label">${label}</p><p class="meta">${previous ? "No change to the displayed report details." : "Oldest loaded update. Load earlier updates to compare."}</p>`}
       </article>`;
     };
-    const profile = reportProfile(report, s.revisions);
+    // The whole history is in hand only once it has loaded, without error, to its last page.
+    const profile = reportProfile(report, s.revisions, Date.now(), { complete: !s.historyLoading && !s.historyError && !s.next });
     const moments = profile ?? genericTimeline(report, s.revisions);
     const reported = moments.timeline.find(m => m.label === "Reported");
     const linkedSource = /^https?:\/\//.test(sourceUrl) ? html`<a href=${sourceUrl} target="_blank" rel="noopener noreferrer">${attribution} ↗</a>` : attribution;
@@ -93,14 +101,15 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
       <span class="meta">${typeLabel(r.event.layer)} · ${humanize(r.event.status)}${r.reason ? html` · ${r.reason}` : nothing}</span>
     </li>`)}</ul>${related.length > 6 ? html`<p class="meta">${related.length - 6} more not shown.</p>` : nothing}`) : nothing;
     const versionsLink = html`<a href="#report-versions" @click=${(event: MouseEvent) => { event.preventDefault(); host.querySelector("#report-versions")?.scrollIntoView({ block: "start" }); }}>${ordered.length === 1 ? "1 version" : `${ordered.length} versions`}</a>`;
-    const savedFirst = [...s.revisions].sort((a, b) => Number(a.revision) - Number(b.revision))[0]?.ingestedAt || report.ingestedAt;
+    // Known only when revision 1 is loaded: the oldest loaded revision of a longer history is not the first save.
+    const savedFirst = firstSaved(s.revisions, report);
     const original = report.description || profile?.original?.text || "", long = original.length > 320;
     const fullOriginal = report.description ? undefined : profile?.original?.full;
     const raw = (summary: string) => html`<details class="report-original"><summary>${summary}</summary><p class="report-quote report-quote--long">${original}</p></details>`;
     // The source's own words, as published; long bulletins fold after a preview.
     const originalCard = block("Original report", html`${original
       ? long ? html`<p class="report-quote report-quote--long">${original.slice(0, 280).trimEnd()}…</p>${raw("Show full report")}` : html`<p class="report-quote">${original}</p>`
-      : html`<p class="meta">The source supplied no narrative.</p>`}${fullOriginal ? html`<details class="report-original"><summary>Call transcript</summary><p class="report-quote report-quote--long">${fullOriginal}</p></details>` : nothing}<p class="meta">${linkedSource} · first saved by Grid ${fmt(savedFirst)} · ${versionsLink}</p>`);
+      : html`<p class="meta">The source supplied no narrative.</p>`}${fullOriginal ? html`<details class="report-original"><summary>Call transcript</summary><p class="report-quote report-quote--long">${fullOriginal}</p></details>` : nothing}<p class="meta">${linkedSource}${Number.isFinite(savedFirst) ? html` · first saved by Grid ${fmt(savedFirst)}` : nothing} · ${versionsLink}</p>`);
     // The summary is the body of most reports (few carry much else), so it sits in a card in
     // the main column under the map rather than loose above it.
     const summaryCard = report.summary ? block("Summary", html`<p class="report-summary">${report.summary}</p>`) : nothing;
@@ -183,7 +192,7 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     if (!current.report || !current.next || current.moreLoading) return;
     store.set({ moreLoading: true });
     try {
-      const result = await data(active.client.getEventHistory(current.report.id, { pageSize: 50, pageToken: current.next }));
+      const result = await data(active.client.getEventHistory(current.report.id, { pageSize: 50, pageToken: current.next, kind: EVERY_KIND }));
       if (!active.signal.aborted) store.set({ revisions: [...current.revisions, ...result.revisions], next: result.nextPageToken, historyError: "" });
     } catch { if (!active.signal.aborted) store.set({ historyError: "Older revisions could not load. Try again." }); }
     finally { if (!active.signal.aborted) store.set({ moreLoading: false }); }
@@ -200,7 +209,7 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
       void data(active.client.getEvent(id)).then(full => { const now = store.get().report; if (!signal.aborted && now?.id === id) store.set({ report: { ...now, geometry: full.geometry } }); }, () => {});
     // A node's measurements do not wait for its history.
     if (seed?.mesh && (seed.mesh.telemetry as { admin?: unknown } | undefined)?.admin) void loadTelemetry();
-    const historyPromise = data(active.client.getEventHistory(id, { pageSize: 50 })).then(value => ({ ok: true as const, value }), () => ({ ok: false as const }));
+    const historyPromise = data(active.client.getEventHistory(id, { pageSize: 50, kind: EVERY_KIND })).then(value => ({ ok: true as const, value }), () => ({ ok: false as const }));
     if (!seed && !revision) {
       try { const report = await data(active.client.getEvent(id)); if (!signal.aborted) store.set({ report }); }
       catch { if (!signal.aborted) store.set({ error: "This report could not be loaded. Your selection is retained; reload the page to try again." }); }
@@ -212,7 +221,7 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     if (revision && !seed) {
       for (let page = 0; next && !revisions.some(r => String(r.revision) === revision) && page < 20; page++) {
         try {
-          const older = await data(active.client.getEventHistory(id, { pageSize: 100, pageToken: next }));
+          const older = await data(active.client.getEventHistory(id, { pageSize: 100, pageToken: next, kind: EVERY_KIND }));
           if (signal.aborted) return;
           revisions.push(...older.revisions); next = older.nextPageToken;
         } catch { historyError = "Some revisions could not load."; break; }

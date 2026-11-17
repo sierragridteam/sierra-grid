@@ -28,6 +28,13 @@ export async function data<T>(
   if (r.notModified) throw new Error("No response body returned");
   return r.data;
 }
+/** One page of a list as the record readers take it (`pagedReader`): a 304, or the items, the next page's token and the ETag. */
+export function toPage<D, T>(
+  r: { notModified: false; data: D; etag: string | null } | { notModified: true },
+  pick: (data: D) => { items: T[]; next: string },
+): { notModified: true } | { notModified: false; items: T[]; next: string; etag: string | null } {
+  return r.notModified ? { notModified: true } : { notModified: false, ...pick(r.data), etag: r.etag };
+}
 export function makeContext(
   root: HTMLElement,
   state: State,

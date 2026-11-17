@@ -48,6 +48,8 @@ const layers = [
   "EVACUATION",
   "WEATHER_ALERT",
   "BURN_STATUS",
+  "CHAIN_CONTROL",
+  "ROAD_SEGMENT",
 ];
 export function defaults(
   topic: ViewId,

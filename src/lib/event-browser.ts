@@ -11,7 +11,7 @@ import { data } from "./context";
 import type { EventQuery } from "@sierragridteam/sdk";
 import { stateUrl, defaults } from "./state";
 import { countLine } from "./search-model";
-import { eventTypes, newestFirst, reportFeedProps, type Report, type Revision } from "./event-model";
+import { eventTypes, natureCounts, newestFirst, reportFeedProps, type Report, type Revision } from "./event-model";
 import { reportDetail } from "./event-detail";
 import { viewFor } from "../config/views";
 
@@ -59,7 +59,7 @@ ${allTypes || !archive ? html`        <form class="browser-filters" aria-label="
             ${!archive ? html`${choice("browser-status", "Status", [["current", "Active & scheduled", "Current"], ["ACTIVE", "Active"], ["SCHEDULED", "Scheduled"], ["all", "All statuses"], ["RESOLVED", "Resolved"], ["EXPIRED", "Expired"]], state.eventStatus || "current", "current", "eventStatus")}${choice("browser-severity", "Importance", [["", "Any importance", "Any level"], ["MODERATE", "Moderate or higher", "Moderate +"], ["SEVERE", "Severe or higher", "Severe +"], ["EXTREME", "Extreme"]], state.severity || "", "", "severity")}` : nothing}
           </div>
         </form>` : nothing}
-        <h2 class="sr-only">${archive ? "Revisions" : "Reports"}</h2><div class="browser-count"><p id="browser-count" class="meta" role="status">${countLine({ loading: s.loading, error: !!s.error, archive, loaded: s.entries.length, more: !!s.token })}</p>${filtered ? html`<button type="button" class="filter-reset" @click=${reset}>Reset</button>` : nothing}</div>
+        <h2 class="sr-only">${archive ? "Revisions" : "Reports"}</h2><div class="browser-count"><p id="browser-count" class="meta" role="status">${countLine({ loading: s.loading, error: !!s.error, archive, loaded: s.entries.length, more: !!s.token, ...(archive ? {} : natureCounts(s.entries.map(entry => entry.report))) })}</p>${filtered ? html`<button type="button" class="filter-reset" @click=${reset}>Reset</button>` : nothing}</div>
         <div id="browser-list" class="feed">${repeat(shown, key, (entry, index) => html`
           ${archive && (index === 0 || day(entry) !== day(shown[index - 1])) ? html`<h3 class="browser-day">${day(entry)}</h3>` : nothing}
           ${feedItem({ ...reportFeedProps(entry.report, reportLink(ctx, entry.report, entry.revision), entry.revision), selected: entry.report.id === s.record && (!s.revision || String(entry.revision?.revision) === s.revision), onSelect: () => select({ record: entry.report.id, revision: entry.revision ? String(entry.revision.revision) : "", selection: "auto" }) })}
