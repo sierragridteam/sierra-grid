@@ -20,8 +20,9 @@ test("event filters and selection are shareable, and the homepage feed uses live
   });
   await page.goto("/"); await ready(page);
   await expect.poll(() => actual?.events?.length).toBeGreaterThan(0);
-  // Mesh node records are network observations, not counted as events.
-  await expect(page.locator("#overview-summary h1")).toContainText(String(actual.events.filter((e: any) => e.layer !== "MESH").length));
+  // Standing state (a mesh node, a burn status, a monitored road) is not counted as events: the API says which reports are (nature).
+  const happening = (e: any) => (e.nature && e.nature !== "EVENT_NATURE_UNSPECIFIED" ? e.nature !== "STATE" : e.layer !== "MESH");
+  await expect(page.locator("#overview-summary h1")).toContainText(String(actual.events.filter(happening).length));
   await expect(page.locator("#overview-feed")).toHaveCount(0);
   await expect(page.locator("#overview-summary")).not.toContainText("Worth your attention");
   await page.locator("#overview-summary").getByRole("link", { name: "Browse all events" }).click(); await ready(page);

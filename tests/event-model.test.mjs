@@ -72,6 +72,8 @@ test("a list with any key hash in it is a list of identifiers, names included", 
   assert.equal(identifierList("Hwy 4, near Arnold"), undefined, "ordinary text with a comma is not a list of identifiers");
   assert.equal(identifierList("relay"), undefined);
   assert.equal(identifierList(""), undefined);
+});
+
 test("what is an event is the API's word (nature); an API without it falls back to 'everything but mesh nodes'", () => {
   assert.equal(isOccurrence({ layer: "ROAD_SEGMENT", nature: "STATE" }), false);
   assert.equal(isOccurrence({ layer: "BURN_STATUS", nature: "STATE" }), false);
