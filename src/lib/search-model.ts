@@ -28,12 +28,23 @@ export function matchExcerpt(match: Match): MatchPart[] | null {
   return match.parts;
 }
 
-/** The line above the report browser's list (Events, and its revisions over a period). */
-export function countLine(s: { loading: boolean; error: boolean; archive: boolean; loaded: number; more: boolean }): string {
+/**
+ * The line above the report browser's list (Events, and its revisions over a
+ * period). `standing` is how many of the loaded reports are standing state
+ * (an open road, a county's burn answer) and of which kinds: the Overview
+ * counts events only, so the list it links to says how its total divides.
+ */
+export function countLine(s: { loading: boolean; error: boolean; archive: boolean; loaded: number; more: boolean; standing?: number; standingTypes?: string[] }): string {
   if (s.loading) return "Loading reports…";
   if (s.error) return "Reports unavailable";
-  const noun = s.archive ? (s.loaded === 1 ? "revision" : "revisions") : (s.loaded === 1 ? "report" : "reports");
-  return `${s.loaded.toLocaleString("en-US")} ${noun}${s.more ? " loaded · more available" : ""} · ${s.archive ? "newest reported first" : "newest received first"}`;
+  const n = (count: number, one: string, many = one + "s") => `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;
+  const noun = s.archive ? n(s.loaded, "revision") : n(s.loaded, "report");
+  const standing = s.archive ? 0 : Math.min(s.standing ?? 0, s.loaded);
+  const kinds = (s.standingTypes ?? []).map(kind => kind.toLowerCase()).join(", ");
+  const split = !standing ? ""
+    : standing === s.loaded ? ` · all standing status${kinds ? ` (${kinds})` : ""}, not events`
+    : ` · ${n(s.loaded - standing, "event")} and ${n(standing, "standing status report")}${kinds ? ` (${kinds})` : ""}`;
+  return `${noun}${s.more ? " loaded · more available" : ""}${split} · ${s.archive ? "newest reported first" : "newest received first"}`;
 }
 
 export type MatchCount = {

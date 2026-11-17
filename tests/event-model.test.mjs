@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { headlineCounts, feedOrder, reportChanges } from "../src/lib/event-model.ts";
+import * as eventModel from "../src/lib/event-model.ts";
+import { headlineCounts, feedOrder, humanize, isOccurrence, natureCounts, reportChanges, reportFeedProps } from "../src/lib/event-model.ts";
 import { parseState, stateUrl } from "../src/lib/state.ts";
 
 test("headline separates scheduled records and qualifies incomplete event counts", () => {
@@ -71,4 +72,42 @@ test("a list with any key hash in it is a list of identifiers, names included", 
   assert.equal(identifierList("Hwy 4, near Arnold"), undefined, "ordinary text with a comma is not a list of identifiers");
   assert.equal(identifierList("relay"), undefined);
   assert.equal(identifierList(""), undefined);
+test("what is an event is the API's word (nature); an API without it falls back to 'everything but mesh nodes'", () => {
+  assert.equal(isOccurrence({ layer: "ROAD_SEGMENT", nature: "STATE" }), false);
+  assert.equal(isOccurrence({ layer: "BURN_STATUS", nature: "STATE" }), false);
+  assert.equal(isOccurrence({ layer: "CHAIN_CONTROL", nature: "OCCURRENCE" }), true);
+  assert.equal(isOccurrence({ layer: "MESH", nature: "OCCURRENCE" }), true, "the API's word wins over the layer");
+  assert.equal(isOccurrence({ layer: "WILDFIRE", nature: "SOMETHING_NEWER" }), true, "a nature this build does not know is not standing state");
+  // An older API: no nature. Only mesh nodes were left out before the field existed.
+  assert.equal(isOccurrence({ layer: "MESH" }), false);
+  assert.equal(isOccurrence({ layer: "ROAD_SEGMENT" }), true);
+  assert.equal(isOccurrence({ layer: "BURN_STATUS", nature: null }), true);
+  assert.equal(isOccurrence({ layer: "MESH", nature: "" }), false);
+  assert.equal(isOccurrence({ layer: "MESH", nature: "EVENT_NATURE_UNSPECIFIED" }), false, "unspecified says nothing, as absent does");
+  assert.equal("ambientLayers" in eventModel, false, "Grid keeps no list of its own");
+});
+
+test("the Overview's count of events and the list it links to divide the same way", () => {
+  const reports = [
+    { layer: "CHAIN_CONTROL", nature: "OCCURRENCE", status: "ACTIVE", severity: "MODERATE" },
+    { layer: "ROAD_INCIDENT", nature: "OCCURRENCE", status: "SCHEDULED", severity: "INFO" },
+    { layer: "ROAD_SEGMENT", nature: "STATE", status: "ACTIVE", severity: "INFO" },
+    { layer: "ROAD_SEGMENT", nature: "STATE", status: "ACTIVE", severity: "INFO" },
+    { layer: "BURN_STATUS", nature: "STATE", status: "ACTIVE", severity: "INFO" },
+  ];
+  assert.deepEqual(natureCounts(reports), { occurrences: 2, standing: 3, standingTypes: ["Road status", "Burn day"] });
+  assert.equal(headlineCounts(reports.filter(isOccurrence), false).total, natureCounts(reports).occurrences);
+  assert.deepEqual(natureCounts([]), { occurrences: 0, standing: 0, standingTypes: [] });
+});
+
+test("a revision row in a list is a revision: lists read changes only, so none is labelled a reading", () => {
+  const report = { headline: "h", severity: "INFO", status: "ACTIVE", layer: "BURN_STATUS", areaLabel: "a", provenance: {}, ingestedAt: "2026-11-16T20:10:00Z" };
+  const props = reportFeedProps(report, "/x", { revision: 4, kind: "READING", observedAt: "2026-11-16T20:10:00Z" });
+  assert.match(props.when, / · Revision 4$/);
+  assert.doesNotMatch(props.when, /Reading/);
+});
+
+test("CAL FIRE's own status reads as words", () => {
+  assert.equal(humanize("CALFIRE_BURNING_ALLOWED"), "Burning allowed");
+  assert.equal(humanize("CALFIRE_PERMIT_REQUIRED"), "Permit required");
 });

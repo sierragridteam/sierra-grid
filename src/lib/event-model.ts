@@ -12,11 +12,21 @@ export const eventTypes = [
 /** Layers with a name but no place in the type filter: their reports are in no place. */
 const otherTypes: Record<string, string> = { SOURCE_HEALTH: "Source health" };
 /**
- * Layers whose reports are standing state, not something happening: a road
- * that is open, a mesh node that is up, a county's burn answer. They stay out
- * of counts of events.
+ * Whether a report is something happening (an incident, an alert, a chain
+ * requirement) rather than the standing state of a tracked thing (a monitored
+ * road, a burn answer, a mesh node, a feed's health). The API says which
+ * (`nature`); an API that predates the field says nothing, and then only mesh
+ * nodes are taken as state, as Grid did before the field existed.
  */
-export const ambientLayers: readonly string[] = ["MESH", "ROAD_SEGMENT", "SOURCE_HEALTH"];
+export function isOccurrence(report: { nature?: string | null; layer: string }) {
+  const said = report.nature && report.nature !== "EVENT_NATURE_UNSPECIFIED";
+  return said ? report.nature !== "STATE" : report.layer !== "MESH";
+}
+/** A list of reports split into what is happening and what is standing state, with the kinds of the latter named. */
+export function natureCounts(reports: { nature?: string | null; layer: string }[]) {
+  const standing = reports.filter(report => !isOccurrence(report));
+  return { occurrences: reports.length - standing.length, standing: standing.length, standingTypes: [...new Set(standing.map(report => typeLabel(report.layer)))] };
+}
 /** A revision saved because a reading confirmed the state, not because anything changed. */
 export const isReading = (revision?: { kind?: string } | null) => revision?.kind === "READING";
 export const severityRank: Record<string, number> = { EXTREME: 4, SEVERE: 3, MODERATE: 2, MINOR: 1, INFO: 0 };
@@ -65,7 +75,7 @@ export function reportFeedProps(report: Report, href: string, revision?: Revisio
     title: report.headline || "Untitled report", href,
     severity: { tone: ["SEVERE", "EXTREME"].includes(report.severity) ? "alarm" : report.severity === "MODERATE" ? "elevated" : "muted", label: humanize(report.severity) },
     tags: [typeLabel(report.layer), humanize(report.status)], place: report.areaLabel,
-    when: revision ? `${regionalTime(time)} · ${isReading(revision) ? "Reading, no change · revision" : "Revision"} ${revision.revision}` : closure ? `${regionalTime(closure.plannedStart)} – ${regionalTime(closure.plannedEnd)}` : undefined,
+    when: revision ? `${regionalTime(time)} · Revision ${revision.revision}` : closure ? `${regionalTime(closure.plannedStart)} – ${regionalTime(closure.plannedEnd)}` : undefined,
     received: revision ? undefined : relativeTime(time), receivedAt: time,
     source: (report.provenance.attribution || report.provenance.sourceName || "Source not supplied") + (report.enhancement?.fields.length ? " · Grid summary" : ""),
   };
