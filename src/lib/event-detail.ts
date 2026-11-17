@@ -4,7 +4,7 @@ import { createStore, region } from "@sierragridteam/design-system/lib/region";
 import { defineDataDiff, type DataDiffProps } from "@sierragridteam/design-system/lib/data-diff";
 import { defineGeoMap, type GeoMapProps } from "@sierragridteam/design-system/lib/geo-map";
 import { callout, closeLink, progress, propertyList, recordHeader, segmented, stat, timeline, trendList, type PropertyItem } from "@sierragridteam/design-system/lib/ui";
-import { genericTimeline, nearPlace, reportProfile } from "./report-profile";
+import { firstSaved, genericTimeline, nearPlace, readingCalls, reportProfile } from "./report-profile";
 import { defineSparkline } from "@sierragridteam/design-system/lib/sparkline";
 import type { V1MeshTelemetryArchive } from "@sierragridteam/sdk";
 import { telemetryMetrics, telemetrySeries, type TelemetryMetric } from "./mesh-telemetry";
@@ -77,13 +77,14 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
       // A reading was saved because the source was checked and its answer held.
       if (isReading(revision)) return html`<article class=${`report-version${String(revision.revision) === s.revision ? " is-selected" : ""}`}>
         <p class="ds-diff-label">Reading ${revision.revision} · ${fmt(revision.observedAt || revision.ingestedAt)}</p>
-        <p class="meta">Checked; the answer did not change.${readingNote(revision) ? html` <span class="report-reading">“${readingNote(revision)}”</span>` : nothing}</p>
+        <p class="meta">Checked; the answer did not change.${readingCalls(revision, previous).map(call => call.message ? ` “${call.message}”` : "")}</p>
       </article>`;
       return html`<article class=${`report-version${String(revision.revision) === s.revision ? " is-selected" : ""}`}>
         ${changes?.changes.length ? html`<sierra-data-diff .props=${changes}></sierra-data-diff>` : !previous && !s.next ? html`<p class="ds-diff-label">First saved · ${fmt(revision.ingestedAt || revision.observedAt)}</p>` : html`<p class="ds-diff-label">${label}</p><p class="meta">${previous ? "No change to the displayed report details." : "Oldest loaded update. Load earlier updates to compare."}</p>`}
       </article>`;
     };
-    const profile = reportProfile(report, s.revisions);
+    // The whole history is in hand only once it has loaded, without error, to its last page.
+    const profile = reportProfile(report, s.revisions, Date.now(), { complete: !s.historyLoading && !s.historyError && !s.next });
     const moments = profile ?? genericTimeline(report, s.revisions);
     const reported = moments.timeline.find(m => m.label === "Reported");
     const linkedSource = /^https?:\/\//.test(sourceUrl) ? html`<a href=${sourceUrl} target="_blank" rel="noopener noreferrer">${attribution} ↗</a>` : attribution;
@@ -100,14 +101,15 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
       <span class="meta">${typeLabel(r.event.layer)} · ${humanize(r.event.status)}${r.reason ? html` · ${r.reason}` : nothing}</span>
     </li>`)}</ul>${related.length > 6 ? html`<p class="meta">${related.length - 6} more not shown.</p>` : nothing}`) : nothing;
     const versionsLink = html`<a href="#report-versions" @click=${(event: MouseEvent) => { event.preventDefault(); host.querySelector("#report-versions")?.scrollIntoView({ block: "start" }); }}>${ordered.length === 1 ? "1 version" : `${ordered.length} versions`}</a>`;
-    const savedFirst = [...s.revisions].sort((a, b) => Number(a.revision) - Number(b.revision))[0]?.ingestedAt || report.ingestedAt;
+    // Known only when revision 1 is loaded: the oldest loaded revision of a longer history is not the first save.
+    const savedFirst = firstSaved(s.revisions, report);
     const original = report.description || profile?.original?.text || "", long = original.length > 320;
     const fullOriginal = report.description ? undefined : profile?.original?.full;
     const raw = (summary: string) => html`<details class="report-original"><summary>${summary}</summary><p class="report-quote report-quote--long">${original}</p></details>`;
     // The source's own words, as published; long bulletins fold after a preview.
     const originalCard = block("Original report", html`${original
       ? long ? html`<p class="report-quote report-quote--long">${original.slice(0, 280).trimEnd()}…</p>${raw("Show full report")}` : html`<p class="report-quote">${original}</p>`
-      : html`<p class="meta">The source supplied no narrative.</p>`}${fullOriginal ? html`<details class="report-original"><summary>Call transcript</summary><p class="report-quote report-quote--long">${fullOriginal}</p></details>` : nothing}<p class="meta">${linkedSource} · first saved by Grid ${fmt(savedFirst)} · ${versionsLink}</p>`);
+      : html`<p class="meta">The source supplied no narrative.</p>`}${fullOriginal ? html`<details class="report-original"><summary>Call transcript</summary><p class="report-quote report-quote--long">${fullOriginal}</p></details>` : nothing}<p class="meta">${linkedSource}${Number.isFinite(savedFirst) ? html` · first saved by Grid ${fmt(savedFirst)}` : nothing} · ${versionsLink}</p>`);
     // The summary is the body of most reports (few carry much else), so it sits in a card in
     // the main column under the map rather than loose above it.
     const summaryCard = report.summary ? block("Summary", html`<p class="report-summary">${report.summary}</p>`) : nothing;
@@ -144,12 +146,6 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
       <footer class="report-source meta">Grid record <code>${report.id}</code></footer>
     </div>`;
   }, { signal: ctx.signal });
-
-  /** What a reading said: the newest burn-line message in its snapshot. */
-  function readingNote(revision: Revision) {
-    const lines = (revision.event.burnStatus?.burnLines ?? []) as { observation?: { message?: string; observedAt?: string } | null }[];
-    return [...lines].sort((a, b) => Date.parse(b.observation?.observedAt || "") - Date.parse(a.observation?.observedAt || ""))[0]?.observation?.message || "";
-  }
 
   /** Every monitor measurement over 24 hours or 7 days, as small multiples. */
   function measurements(t: Telemetry) {

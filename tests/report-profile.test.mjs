@@ -159,3 +159,152 @@ test("burn status: today's answer, how long it has held, and recent transitions 
   assert.ok(!labels.some((l) => l.endsWith(": Unknown")));
   assert.equal(p.sections[0].items.find((i) => i.label === "Phone").value, "(209) 754-6600");
 });
+
+// ---- Recorded state: what a profile may say from a partial history ----------
+
+const T = (s) => Date.parse(s);
+const revOf = (n, at, event, kind = "CHANGE") => ({ revision: n, kind, observedAt: at, ingestedAt: at, event: { ...event, revision: n } });
+const stat = (profile, label) => profile.stats.find((s) => s.label === label);
+const lines = (profile) => profile.timeline.map((m) => `${m.time} ${m.label}${m.detail ? ` (${m.detail})` : ""}`);
+
+const roadEvent = (status, beyond = []) => ({ ...base, id: "road:hwy4-arnold-bearvalley", layer: "ROAD_SEGMENT", status: "ACTIVE", severity: "INFO", roadSegment: { name: "Hwy 4", section: "Arnold to Bear Valley", status, beyond } });
+test("a monitored road: how long it has had its status is known only from the revision where it changed", () => {
+  const at = T("2026-11-17T20:00:00Z");
+  const history = [revOf(1, "2026-11-10T08:00:00Z", roadEvent("OPEN")), revOf(2, "2026-11-14T08:00:00Z", roadEvent("CLOSED")), revOf(3, "2026-11-15T20:00:00Z", roadEvent("OPEN"))];
+  const report = { ...roadEvent("OPEN"), revision: 3, ingestedAt: "2026-11-15T20:00:00Z" };
+  assert.equal(stat(reportProfile(report, history, at), "Road").sub, "for 2 days, since Nov 15");
+  assert.equal(reportProfile(report, history, at).when, "Open since Nov 15, 12:00 PT", "the header says how long it has stood, not 'report time not supplied'");
+  assert.equal(stat(reportProfile(report, history, at, { complete: false }), "Road").sub, "for 2 days, since Nov 15", "the change itself is loaded, so truncation does not matter");
+  // Never changed since recording began: open for at least that long, not "since".
+  const steady = [revOf(1, "2026-11-10T20:00:00Z", roadEvent("OPEN")), revOf(2, "2026-11-12T20:00:00Z", roadEvent("OPEN", [{ name: "Ebbetts Pass winter closure", side: "END", status: "CLOSED" }]))];
+  const p = reportProfile({ ...report, revision: 2 }, steady, at);
+  assert.equal(stat(p, "Road").sub, "for at least 7 days · on record since Nov 10");
+  assert.ok(lines(p).some((l) => /First saved by Grid/.test(l)));
+  // Truncated: the oldest LOADED revision is not when it opened, nor when Grid first saved it.
+  const truncated = reportProfile({ ...report, revision: 9 }, [revOf(8, "2026-11-15T20:00:00Z", roadEvent("OPEN")), revOf(9, "2026-11-16T20:00:00Z", roadEvent("OPEN"))], at, { complete: false });
+  assert.equal(stat(truncated, "Road").sub, "for at least 2 days · earlier history not loaded");
+  assert.ok(!lines(truncated).some((l) => /First saved by Grid/.test(l)), "the first save is not known from a truncated history");
+  assert.ok(lines(truncated).some((l) => /Earlier history not loaded/.test(l)));
+  // History loading or failed: no revisions at all, so no duration (not the latest revision's ingest time).
+  const bare = reportProfile({ ...report, revision: 9, ingestedAt: "2026-11-17T19:00:00Z" }, [], at, { complete: false });
+  assert.equal(stat(bare, "Road").sub, undefined);
+  assert.equal(bare.when, "Monitored road");
+  assert.equal(truncated.when, "Open for at least 2 days");
+  assert.deepEqual(lines(bare), ["12:00 Now"]);
+  assert.ok(!bare.stats.some((s) => s.label === "Traffic"), "congestion is no longer part of a road's report");
+});
+
+const chainEvent = (status, from, to, effective, level = "R2") => ({ ...base, id: "cc:hwy88:r2", layer: "CHAIN_CONTROL", status, severity: "MODERATE", effective, observedAt: undefined, chainControl: { level, highway: "Highway 88", from: { place: from }, to: { place: to }, signs: [] } });
+test("a lifted chain requirement: one 'Lifted', no 'Status: Resolved', and from-to instead of 'since'", () => {
+  const history = [
+    revOf(1, "2026-11-16T23:33:08Z", chainEvent("ACTIVE", "Peddler Vista", "Pickett's Junction", "2026-11-16T10:02:14Z")),
+    revOf(2, "2026-11-17T00:02:34Z", chainEvent("RESOLVED", "Peddler Vista", "Pickett's Junction", "2026-11-16T10:02:14Z")),
+  ];
+  // The event's own clock has more digits than the revision's: still one lifting.
+  const report = { ...chainEvent("RESOLVED", "Peddler Vista", "Pickett's Junction", "2026-11-16T10:02:14Z"), revision: 2, observedAt: "2026-11-17T00:02:34.209119383Z" };
+  const p = reportProfile(report, history, T("2026-11-17T01:00:00Z"));
+  assert.deepEqual([stat(p, "Was in effect").value, stat(p, "Was in effect").sub], ["14 h", "from Nov 16, 02:02 to Nov 16, 16:02 PT"]);
+  assert.deepEqual(lines(p), [
+    "02:02 R2 posted (Peddler Vista to Pickett's Junction)",
+    "15:33 First saved by Grid",
+    "16:02 Lifted (no longer listed by Caltrans)",
+    "17:00 Now",
+  ]);
+  assert.ok(!lines(p).some((l) => /Status:|Severity:/.test(l)));
+  assert.equal(p.when, "Lifted Nov 16, 16:02 PT");
+  const signed = reportProfile({ ...report, chainControl: { ...report.chainControl, signs: [{ place: "KIRKWOOD", direction: "Eastbound", level: "R2", since: "2026-11-16T10:02:00Z" }] } }, history, T("2026-11-17T01:00:00Z"));
+  assert.deepEqual([signed.sections[0].title, signed.sections[0].items[0].value], ["Checkpoints when last posted", "R2 · from 02:02"], "a lifted stretch's signs are not 'since'");
+});
+
+test("a chain slot posted, lifted and posted again keeps every posting, and a changed stretch is one entry", () => {
+  const history = [
+    revOf(1, "2026-11-16T14:20:00Z", chainEvent("ACTIVE", "Poison Springs", "Tamarack", "2026-11-16T14:10:00Z")),
+    revOf(2, "2026-11-16T16:00:00Z", chainEvent("ACTIVE", "Camp Connell", "Tamarack", "2026-11-16T14:10:00Z")),
+    revOf(3, "2026-11-16T17:00:00Z", chainEvent("ACTIVE", "Camp Connell", "Tamarack", "2026-11-16T14:10:00Z")), // a sign only
+    revOf(4, "2026-11-17T09:00:00Z", chainEvent("RESOLVED", "Camp Connell", "Tamarack", "2026-11-16T14:10:00Z")),
+    revOf(5, "2026-11-20T07:05:00Z", chainEvent("ACTIVE", "Dorrington", "Tamarack", "2026-11-20T07:00:00Z")),
+  ];
+  const report = { ...chainEvent("ACTIVE", "Dorrington", "Tamarack", "2026-11-20T07:00:00Z"), revision: 5 };
+  const p = reportProfile(report, history, T("2026-11-20T09:00:00Z"));
+  assert.deepEqual(lines(p), [
+    "Nov 16, 06:10 R2 posted (Poison Springs to Tamarack)",
+    "Nov 16, 06:20 First saved by Grid",
+    "Nov 16, 08:00 Now Camp Connell to Tamarack (was Poison Springs to Tamarack · seen by Grid)",
+    "Nov 17, 01:00 Lifted (no longer listed by Caltrans)",
+    "Nov 19, 23:00 R2 posted again (Dorrington to Tamarack)",
+    "Nov 20, 01:00 Now",
+  ]);
+  assert.deepEqual([stat(p, "In effect for").value, stat(p, "In effect for").sub], ["2 h", "since Nov 19, 23:00 PT"]);
+  assert.equal(p.when, "Posted Nov 19, 23:00 PT");
+  // Truncated to the last two revisions: what is loaded is told, and the gap is said.
+  const cut = reportProfile(report, history.slice(3), T("2026-11-20T09:00:00Z"), { complete: false });
+  assert.deepEqual(lines(cut), ["Nov 17, 01:00 Earlier history not loaded", "Nov 17, 01:00 Lifted (no longer listed by Caltrans)", "Nov 19, 23:00 R2 posted again (Dorrington to Tamarack)", "Nov 20, 01:00 Now"]);
+  // Only the latest revision: the posting comes from the report itself, without the stretch it was posted with.
+  const last = reportProfile(report, history.slice(4), T("2026-11-20T09:00:00Z"), { complete: false });
+  assert.deepEqual(lines(last), ["Nov 19, 23:00 R2 posted", "Nov 19, 23:05 Earlier history not loaded", "Nov 20, 01:00 Now"]);
+  // No history at all (loading): the posting from the report, nothing invented.
+  assert.deepEqual(lines(reportProfile(report, [], T("2026-11-20T09:00:00Z"), { complete: false })), ["Nov 19, 23:00 R2 posted", "Nov 20, 01:00 Now"]);
+  assert.ok(!JSON.stringify(reportProfile({ ...report, chainControl: { ...report.chainControl, level: undefined } }, [], T("2026-11-20T09:00:00Z"))).includes("undefined posted"));
+});
+
+const healthEvent = (status, since, extra = {}) => ({ ...base, id: "source:meshcore", layer: "SOURCE_HEALTH", status: "ACTIVE", severity: "INFO", sourceHealth: { sourceId: "meshcore", status, since, error: status === "OK" ? "" : "no broker delivering", lastSuccessAt: null, ...extra } });
+test("source health at revision 1: 'since' is when recording began, so the status is 'at least' that old", () => {
+  const at = T("2026-11-17T00:09:38Z");
+  const report = { ...healthEvent("UNAVAILABLE", "2026-11-16T23:32:38Z"), revision: 1, readings: 0 };
+  const p = reportProfile(report, [revOf(1, "2026-11-16T23:32:38Z", report)], at);
+  assert.equal(p.when, "Unavailable for at least 37 m");
+  assert.deepEqual(p.stats.map((s) => [s.label, s.value, s.sub]), [
+    ["Status", "Unavailable", "recorded since Nov 16, 15:32 PT"],
+    ["Last good reading", "None on record", "before this status began"],
+    ["Changes on record", "0", undefined],
+  ]);
+  assert.deepEqual(lines(p), ["15:32 Recording began: unavailable (no broker delivering)", "16:09 Now"]);
+});
+
+test("source health once revised: the status has a beginning, and a current feed shows no frozen 'last good reading'", () => {
+  const at = T("2026-11-17T00:09:38Z");
+  const down = { ...healthEvent("UNAVAILABLE", "2026-11-16T22:00:00Z", { lastSuccessAt: "2026-11-16T21:55:00Z" }), revision: 4, readings: 1 };
+  const p = reportProfile(down, [], at);
+  assert.equal(p.when, "Unavailable for 2 h 10 m");
+  assert.deepEqual(p.stats.map((s) => [s.label, s.value, s.sub]), [
+    ["Status", "Unavailable", "since Nov 16, 14:00 PT"],
+    ["Last good reading", "2 h 15 m ago", "before this status began"],
+    ["Changes on record", "2", undefined],
+  ]);
+  // Current: lastSuccessAt is frozen at the last change, so it is not shown as the feed's last reading.
+  const ok = { ...healthEvent("OK", "2026-11-16T23:33:11Z", { lastSuccessAt: "2026-11-16T23:33:11Z" }), revision: 2, readings: 0 };
+  const history = [revOf(2, "2026-11-16T23:33:11Z", ok), revOf(1, "2026-11-16T23:32:07Z", healthEvent("UNAVAILABLE", "2026-11-16T23:32:07Z"))];
+  const q = reportProfile(ok, history, at);
+  assert.deepEqual(q.stats.map((s) => s.label), ["Status", "Changes on record"]);
+  assert.equal(stat(q, "Changes on record").value, "1");
+  assert.deepEqual(lines(q).slice(0, 2), ["15:32 Recording began: unavailable (no broker delivering)", "15:33 Current"]);
+  // The oldest LOADED revision of a truncated history is not where recording began.
+  const cut = reportProfile({ ...ok, revision: 7 }, [revOf(7, "2026-11-16T23:33:11Z", ok), revOf(6, "2026-11-16T23:00:00Z", healthEvent("STALE", "2026-11-16T23:00:00Z"))], at, { complete: false });
+  assert.ok(!lines(cut).some((l) => /Recording began/.test(l)));
+  assert.deepEqual(lines(cut).slice(0, 3), ["15:00 Earlier history not loaded", "15:00 Stale (no broker delivering)", "15:33 Current"]);
+  // Readings never make the count of changes negative; an unknown status is shown as sent.
+  assert.equal(stat(reportProfile({ ...ok, revision: 2, readings: 5 }, [], at), "Changes on record").value, "0");
+  assert.equal(stat(reportProfile({ ...healthEvent("DEGRADED", "2026-11-16T22:00:00Z"), revision: 2 }, [], at), "Status").value, "Degraded");
+});
+
+const burnEvent = (permission, calfire = "CALFIRE_BURNING_ALLOWED") => ({ ...base, id: "burn:calaveras-county", layer: "BURN_STATUS", status: "ACTIVE", severity: "INFO",
+  burnStatus: { burnDay: "BURN_DAY_YES", permission, calfireStatus: calfire, calfireArea: "All SRA", calfireEffective: "2026-11-06T16:00:00Z", burnLines: [] } });
+test("burn status: 'Unchanged for' is exact only when the change is loaded; CAL FIRE allowing is explained", () => {
+  const at = T("2026-11-17T00:57:52Z");
+  const allowed = burnEvent("BURN_PERMISSION_ALLOWED"), unknown = burnEvent("BURN_PERMISSION_UNKNOWN", "CALFIRE_BURN_STATUS_UNKNOWN");
+  // As the API has it: unknown until the fourth revision. "Allowed" began there, not at the first save.
+  const history = [revOf(1, "2026-11-16T23:32:07Z", unknown), revOf(2, "2026-11-16T23:33:11Z", unknown), revOf(3, "2026-11-16T23:36:02Z", unknown, "READING"), revOf(4, "2026-11-16T23:57:52Z", allowed)];
+  const p = reportProfile({ ...allowed, revision: 4 }, history, at);
+  assert.deepEqual([stat(p, "Unchanged for").value, stat(p, "Unchanged for").sub], ["1 h", "since Nov 16"]);
+  assert.equal(stat(p, "CAL FIRE").value, "Burning allowed");
+  assert.equal(stat(p, "CAL FIRE").sub, "CAL FIRE is not restricting; the air district decides · All SRA · since Nov 6");
+  // Unchanged through the whole record: at least since recording began.
+  const steady = reportProfile({ ...allowed, revision: 2 }, [revOf(1, "2026-11-14T00:57:52Z", allowed), revOf(2, "2026-11-15T00:57:52Z", allowed, "READING")], at);
+  assert.deepEqual([stat(steady, "Unchanged for").value, stat(steady, "Unchanged for").sub], ["At least 3 days", "on record since Nov 13"]);
+  // Truncated, loading or failed: a lower bound, or nothing.
+  const cut = reportProfile({ ...allowed, revision: 60 }, [revOf(59, "2026-11-16T00:57:52Z", allowed, "READING"), revOf(60, "2026-11-16T12:57:52Z", allowed, "READING")], at, { complete: false });
+  assert.deepEqual([stat(cut, "Unchanged for").value, stat(cut, "Unchanged for").sub], ["At least 24 h", "earlier history not loaded"]);
+  assert.equal(stat(reportProfile({ ...allowed, revision: 60 }, [], at, { complete: false }), "Unchanged for").value, "Not known");
+  // A suspension keeps its own sub-label.
+  assert.equal(stat(reportProfile(burnEvent("BURN_PERMISSION_PROHIBITED", "CALFIRE_BURNING_SUSPENDED"), [], at), "CAL FIRE").sub, "All SRA · since Nov 6");
+});
