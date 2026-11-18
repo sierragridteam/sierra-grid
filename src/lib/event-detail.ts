@@ -11,7 +11,7 @@ import { telemetryMetrics, telemetrySeries, type TelemetryMetric } from "./mesh-
 import { data, makeContext, type Context } from "./context";
 import { fmt } from "./render";
 import { stateUrl } from "./state";
-import { humanize, identifierList, isReading, reportChanges, reportFields, typeLabel, type Report, type Revision } from "./event-model";
+import { humanize, identifierList, isReading, reportChanges, reportFields, reportTitle, typeLabel, type Report, type Revision } from "./event-model";
 export { identifierList };
 
 export const severityTone = (value: string) => ["SEVERE", "EXTREME"].includes(value) ? "alarm" as const : value === "MODERATE" ? "elevated" as const : "muted" as const;
@@ -97,7 +97,7 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     const rank = (r: Related) => ["RELATION_HIGH", "RELATION_MEDIUM", "RELATION_LOW", "RELATION_CONTEXT"].indexOf(r.confidence);
     const related = [...s.related].sort((a, b) => (rank(a) < 0 ? 9 : rank(a)) - (rank(b) < 0 ? 9 : rank(b)) || Number(b.event.status === "ACTIVE") - Number(a.event.status === "ACTIVE"));
     const relatedCard = related.length ? block("Related", html`<ul class="report-related">${related.slice(0, 6).map(r => html`<li>
-      <a href=${stateUrl({ ...ctx.state, topic: "events", layer: "ALL", eventStatus: "all", record: r.event.id, revision: "", autoSelect: true })}>${(r.event.headline || "Untitled report").replace(/\.$/, "")}</a>
+      <a href=${stateUrl({ ...ctx.state, topic: "events", layer: "ALL", eventStatus: "all", record: r.event.id, revision: "", autoSelect: true })}>${reportTitle(r.event)}</a>
       <span class="meta">${typeLabel(r.event.layer)} · ${humanize(r.event.status)}${r.reason ? html` · ${r.reason}` : nothing}</span>
     </li>`)}</ul>${related.length > 6 ? html`<p class="meta">${related.length - 6} more not shown.</p>` : nothing}`) : nothing;
     const versionsLink = html`<a href="#report-versions" @click=${(event: MouseEvent) => { event.preventDefault(); host.querySelector("#report-versions")?.scrollIntoView({ block: "start" }); }}>${ordered.length === 1 ? "1 version" : `${ordered.length} versions`}</a>`;
@@ -119,7 +119,7 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
         badges: [{ label: humanize(report.severity), tone: severityTone(report.severity) }, { label: humanize(report.status), dot: false }],
         tags: [typeLabel(report.layer), ...(s.revision ? [`Revision ${s.revision}`] : [])],
         title: (report.headline || "Untitled report").replace(/\.$/, ""),
-        subtitle: profile?.subtitle ? [profile.subtitle, nearPlace(report.areaLabel)].filter(Boolean).join(" · ") : report.areaLabel || undefined,
+        subtitle: [report.subhead?.trim(), profile?.subtitle ? [profile.subtitle, nearPlace(report.areaLabel)].filter(Boolean).join(" · ") : report.areaLabel].filter(Boolean).join(" · ") || undefined,
         meta: [attribution, profile?.when ?? (reported ? `Reported ${fmt(reported.datetime)}` : "Report time not supplied"), ...(profile?.identifiers ?? [])].join(" · "),
         actions: close ? closeLink(close.href(), { label: "Close report", onClose: close.onClose }) : undefined,
       })}

@@ -68,11 +68,21 @@ export function relativeTime(value: string | null | undefined, now = Date.now())
   return `${Math.floor(minutes / 1440)}d ago`;
 }
 
+/**
+ * A report's title in a list. Two alerts of one NWS product share a headline
+ * (one "Winter Storm Warning" per elevation band); the API's subhead says what
+ * is particular to each, and without it they are one row shown twice.
+ */
+export function reportTitle(report: { headline?: string; subhead?: string }) {
+  const headline = (report.headline || "Untitled report").replace(/\.$/, ""), subhead = report.subhead?.trim();
+  return subhead ? `${headline} · ${subhead}` : headline;
+}
+
 export function reportFeedProps(report: Report, href: string, revision?: Revision): FeedItemProps {
   const time = revision?.observedAt || revision?.ingestedAt || report.ingestedAt;
   const closure = report.status === "SCHEDULED" ? report.roadIncident?.closure : undefined;
   return {
-    title: report.headline || "Untitled report", href,
+    title: reportTitle(report), href,
     severity: { tone: ["SEVERE", "EXTREME"].includes(report.severity) ? "alarm" : report.severity === "MODERATE" ? "elevated" : "muted", label: humanize(report.severity) },
     tags: [typeLabel(report.layer), humanize(report.status)], place: report.areaLabel,
     when: revision ? `${regionalTime(time)} · Revision ${revision.revision}` : closure ? `${regionalTime(closure.plannedStart)} – ${regionalTime(closure.plannedEnd)}` : undefined,
