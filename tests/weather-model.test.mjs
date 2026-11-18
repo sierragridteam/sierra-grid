@@ -109,3 +109,17 @@ test("the next 24 hours are 24 periods even mid-hour, and a trace of rain is not
   assert.equal(units("F").rain(0.3), "0.01 in");
   assert.equal(units("C").rain(0), "0.0 mm");
 });
+
+test("sibling alerts keep their subhead through the page: the answer and the list do not read as one alert twice", () => {
+  const base = { severity: "SEVERE", status: "ACTIVE", effective: "2026-11-18T06:00:00Z", expires: "2026-11-20T12:00:00Z" };
+  const alerts = currentAlerts([
+    { id: "a", headline: "Winter Storm Warning", subhead: "1 to 3 ft above 5,000 ft", ...base },
+    { id: "b", headline: "Winter Storm Warning", subhead: "Up to a foot, 4,000 to 5,000 ft", ...base },
+    { id: "c", headline: "Wind Advisory", subhead: "", ...base, severity: "MODERATE" },
+  ], Date.parse("2026-11-18T12:00:00Z"));
+  assert.deepEqual(alerts.map((a) => a.headline), ["Winter Storm Warning (1 to 3 ft above 5,000 ft)", "Winter Storm Warning (Up to a foot, 4,000 to 5,000 ft)", "Wind Advisory"]);
+  const now = Date.parse("2026-11-18T12:00:00Z");
+  assert.deepEqual(currentAlerts(alerts, now).map((a) => a.headline), alerts.map((a) => a.headline), "a second pass adds nothing");
+  const answer = headline({ alerts, now, fmt: () => "Fri 04:00", u: units("imperial"), snow: null, stops: [], current: [], totals: [] });
+  assert.equal(answer.title, "Winter Storm Warning (1 to 3 ft above 5,000 ft) until Fri 04:00");
+});

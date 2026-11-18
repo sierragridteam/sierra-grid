@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as eventModel from "../src/lib/event-model.ts";
-import { headlineCounts, feedOrder, humanize, isOccurrence, natureCounts, reportChanges, reportFeedProps } from "../src/lib/event-model.ts";
+import { headlineCounts, feedOrder, humanize, reportTitle, isOccurrence, natureCounts, reportChanges, reportFeedProps } from "../src/lib/event-model.ts";
 import { parseState, stateUrl } from "../src/lib/state.ts";
 
 test("headline separates scheduled records and qualifies incomplete event counts", () => {
@@ -112,4 +112,13 @@ test("a revision row in a list is a revision: lists read changes only, so none i
 test("CAL FIRE's own status reads as words", () => {
   assert.equal(humanize("CALFIRE_BURNING_ALLOWED"), "Burning allowed");
   assert.equal(humanize("CALFIRE_PERMIT_REQUIRED"), "Permit required");
+});
+
+test("two alerts of one product are told apart by the API's subhead; without one the title is the headline", () => {
+  assert.equal(reportTitle({ headline: "Winter Storm Warning", subhead: "1 to 3 ft above 5,000 ft" }), "Winter Storm Warning · 1 to 3 ft above 5,000 ft");
+  assert.equal(reportTitle({ headline: "Winter Storm Warning", subhead: "" }), "Winter Storm Warning");
+  assert.equal(reportTitle({ headline: "Wind Advisory." }), "Wind Advisory", "an API that does not send the field");
+  assert.equal(reportTitle({ headline: "", subhead: " " }), "Untitled report");
+  const row = reportFeedProps({ headline: "Winter Storm Warning", subhead: "Up to a foot, 4,000 to 5,000 ft", severity: "SEVERE", status: "ACTIVE", layer: "WEATHER_ALERT", ingestedAt: "2026-11-17T06:02:00Z", provenance: { sourceName: "NWS" } }, "#");
+  assert.equal(row.title, "Winter Storm Warning · Up to a foot, 4,000 to 5,000 ft");
 });

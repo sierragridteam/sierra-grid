@@ -16,7 +16,7 @@ export type Daily = {
 };
 export type Forecast = { locationId: string; periods: Period[]; daily: Daily[]; issuedAt?: string | null; source?: string };
 export type Town = { id: string; name: string; latitude: number; longitude: number; elevationMeters: number | null };
-export type Alert = { id: string; headline: string; severity: string; status: string; effective?: string | null; expires?: string | null };
+export type Alert = { id: string; headline: string; subhead?: string; severity: string; status: string; effective?: string | null; expires?: string | null };
 
 const HOUR = 3_600_000;
 const round = (n: number, step = 1) => Math.round(n / step) * step;
@@ -132,8 +132,13 @@ export function days(daily: Daily[], timeZone: string, now: number) {
 const RANK: Record<string, number> = { EXTREME: 4, SEVERE: 3, MODERATE: 2, MINOR: 1, INFO: 0 };
 /** In effect now or still to come, most severe first, then soonest to end. */
 export function currentAlerts<T extends Alert>(alerts: T[], now: number) {
+  // The headline carries the API's subhead from here on: two alerts of one
+  // product (one per elevation band) are otherwise the same line twice. In
+  // brackets, because this page joins alerts with a middle dot. The subhead
+  // is emptied once used: the page passes this list through again.
   return alerts
     .filter((a) => a.status !== "RESOLVED" && a.status !== "CANCELLED" && !(a.expires && Date.parse(a.expires) < now))
+    .map((a) => (a.subhead?.trim() ? { ...a, headline: `${a.headline.replace(/\.$/, "")} (${a.subhead.trim()})`, subhead: "" } : a))
     .sort((a, b) => (RANK[b.severity] ?? 0) - (RANK[a.severity] ?? 0) || Date.parse(a.expires ?? "") - Date.parse(b.expires ?? ""));
 }
 export const alertTone = (severity: string) => ((RANK[severity] ?? 0) >= 3 ? "alarm" : (RANK[severity] ?? 0) === 2 ? "elevated" : "muted") as "alarm" | "elevated" | "muted";
