@@ -122,3 +122,18 @@ test("two alerts of one product are told apart by the API's subhead; without one
   const row = reportFeedProps({ headline: "Winter Storm Warning", subhead: "Up to a foot, 4,000 to 5,000 ft", severity: "SEVERE", status: "ACTIVE", layer: "WEATHER_ALERT", ingestedAt: "2026-11-17T06:02:00Z", provenance: { sourceName: "NWS" } }, "#");
   assert.equal(row.title, "Winter Storm Warning · Up to a foot, 4,000 to 5,000 ft");
 });
+
+test("a severe standing condition counts in 'N are severe', so the sentence and the severity list agree", () => {
+  const ev = (layer, nature, severity, status = "ACTIVE") => ({ layer, nature, severity, status });
+  const events = [ev("ROAD_INCIDENT", "OCCURRENCE", "SEVERE"), ev("WEATHER_ALERT", "OCCURRENCE", "SEVERE"), ev("POWER", "OCCURRENCE", "INFO")];
+  const standing = [ev("ROAD_SEGMENT", "STATE", "SEVERE"), ev("ROAD_SEGMENT", "STATE", "SEVERE"), ev("ROAD_SEGMENT", "STATE", "INFO"), ev("BURN_STATUS", "STATE", "INFO")];
+  const both = headlineCounts(events, false, undefined, standing);
+  assert.equal(both.total, 3, "standing state is still not an event");
+  assert.match(both.first, /^3 events are active/);
+  assert.equal(both.second, "4 are severe.");
+  assert.equal(headlineCounts([events[2]], false, undefined, [standing[0]]).second, "1 is severe.");
+  assert.equal(headlineCounts(events, false, undefined, [standing[2], standing[3]]).second, "2 are severe.");
+  assert.equal(headlineCounts(events, false).second, "2 are severe.", "callers that pass no standing reports read as before");
+  assert.equal(headlineCounts(events, false, undefined, [ev("ROAD_SEGMENT", "STATE", "SEVERE", "EXPIRED")]).second, "2 are severe.", "a standing report that has ended does not count");
+  assert.equal(headlineCounts(events, false, undefined, [ev("ROAD_SEGMENT", "STATE", "EXTREME")]).second, "1 is extreme.");
+});
