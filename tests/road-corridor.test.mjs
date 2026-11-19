@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chainBands, chainFigure, chainRead, chainsOnRoute, fitLabel, labelRoom, routeChainNote, routeSlice, sectionChains, sectionLabels, chainStretch, chainCheckpoints, chainExtent, beyondClosures, beyondHeadline, beyondLabel, beyondText, roadsAnswer, severityRankOf, severityTone, alongRoute, closureNotice, routeChains, segmentName, signBoard, workJobs } from "../src/lib/road-corridor.ts";
+import { chainBands, chainFigure, chainRead, chainsOnRoute, fitLabel, labelRoom, routeChainNote, routeSlice, sectionChains, sectionLabels, chainStretch, chainCheckpoints, chainExtent, beyondClosures, beyondHeadline, beyondLabel, beyondText, roadsAnswer, severityRankOf, severityTone, alongRoute, closureNotice, routeChains, segmentName, signBoard, signCount, signPlaces, workJobs } from "../src/lib/road-corridor.ts";
 
 const seg = (headline, coordinates, extra = {}) => ({ id: headline, headline, status: "OPEN", coordinates, ...extra });
 
@@ -46,6 +46,33 @@ test("signs with the same message merge; blank and out-of-service signs are coun
   assert.equal(board.showing.length, 1);
   assert.equal(board.showing[0].count, 2);
   assert.deepEqual(board.blank.map((x) => x.id), ["c", "d"]);
+});
+
+test("a face that stands for several signs names every place, and the count line says how many faces follow", () => {
+  // 2026-11-19: Soulsbyville (Hwy 108) and the sign west of Yosemite on Hwy 120 both read "Sonora Pass closed".
+  // The panel said "4 of 6 showing a message" over three cards, and the one card named Soulsbyville only.
+  const s = (id, location, route, pages, since) => ({ id, location, route, direction: "East", pages, inService: true, since });
+  const sonora = [["SONORA PASS", "CLOSED", ""], ["CHAIN CONTROL", "EAST OF", "TWAIN HARTE"]];
+  const signs = [
+    s("V42", "EB 108 SOULSBYVILLE", "SR-108", sonora, 200), s("V43", "EB 120 W/O YOSEMITE", "SR-108", sonora, 100),
+    s("V50", "EB 4 W/O MURPHYS", "SR-4", [["EBBETTS PASS", "CLOSED"]], 300), s("V80", "EB 88 E/O PINE GROVE", "SR-88", [["HWY 88 CLOSED"]], 50),
+    s("V81", "EB 88 AT DEW DROP", "SR-88", []), s("V111", "Virtual CMS", "SR-88", []),
+  ];
+  const board = signBoard(signs);
+  assert.equal(board.showing.length, 3);
+  assert.deepEqual([board.showing[0].count, board.showing[0].locations, board.showing[0].since], [2, ["EB 108 SOULSBYVILLE", "EB 120 W/O YOSEMITE"], 100], "both places, the earlier time");
+  assert.equal(signPlaces(board.showing[0].locations), "EB 108 SOULSBYVILLE · EB 120 W/O YOSEMITE");
+  assert.equal(signPlaces(board.showing[1].locations), "EB 4 W/O MURPHYS");
+  assert.equal(signCount(board, signs.length), "4 of 6 showing a message · 3 different messages");
+  // No shared message: the count is the number of cards, and says nothing more.
+  assert.equal(signCount(signBoard(signs.filter((x) => x.id !== "V43")), 5), "3 of 5 showing a message");
+  assert.equal(signCount(signBoard(signs.slice(0, 2)), 2), "2 of 2 showing a message · 1 different message");
+  assert.equal(signCount(signBoard([]), 0), "0 of 0 showing a message");
+  // A campaign on many signs: the first two places and how many more; a place is named once.
+  assert.equal(signPlaces(["A", "B", "C"]), "A · B · C");
+  assert.equal(signPlaces(["A", "B", "C", "D", "E"]), "A · B · and 3 more");
+  const twins = signBoard([s("a", "DEW DROP", "SR-88", [["X"]], NaN), s("b", "DEW DROP", "SR-88", [["X"]], 7)]);
+  assert.deepEqual([twins.showing[0].count, twins.showing[0].locations, twins.showing[0].since], [2, ["DEW DROP"], 7]);
 });
 
 test("work rows are named by the work and its place; the route is the group", async () => {
