@@ -13,10 +13,27 @@ export type Segment = {
   statusSince?: string | null; statusSinceAtLeast?: boolean | null;
   /** Why the section has its status, when it is not simply open. */
   statusCauses?: { status?: string; source?: string; description?: string; extent?: string }[] | null;
-  /** Named seasonal closures in effect past one of the section's ends; they do not change `status`. */
+  /** The section's own severity from the source; it does not include what is past its ends. */
+  severity?: string | null; severityRank?: number | null;
+  /** Named closures in effect past one of the section's ends; they do not change `status`. */
   beyond?: Beyond[] | null;
 };
-export type Beyond = { name?: string; status: string; side: string; reason?: string; from?: string; to?: string; description?: string; headline?: string };
+/**
+ * A closure past a section's end, as the API sends it. `seasonal` is the
+ * source's statement that it is a standing condition (absent means it is
+ * not); `severity` is the closure's own rating. Nothing here is decided from
+ * its name, its reason or the date.
+ */
+export type Beyond = {
+  name?: string; status: string; side: string; reason?: string; from?: string; to?: string; description?: string; headline?: string;
+  seasonal?: boolean | null; severity?: string | null; severityRank?: number | null;
+};
+const SEVERITY_RANK: Record<string, number> = { INFO: 0, MINOR: 1, MODERATE: 2, SEVERE: 3, EXTREME: 4 };
+/** The source's rank for a rated thing: its `severityRank`, else its `severity`; unrated is 0, like INFO. */
+export const severityRankOf = (x: { severity?: string | null; severityRank?: number | null }) =>
+  typeof x.severityRank === "number" && Number.isFinite(x.severityRank) ? x.severityRank : SEVERITY_RANK[x.severity ?? ""] ?? 0;
+/** How loud a rated thing is drawn: severe and extreme alarm, moderate is elevated, anything lower is quiet. */
+export const severityTone = (rank: number) => (rank >= 3 ? "alarm" as const : rank === 2 ? "elevated" as const : "muted" as const);
 export type Chain = {
   route: string;
   /** Places along the route with their distance from the start (km, along the geometry). */
@@ -145,30 +162,36 @@ export function workName(headline: string, area: string) {
 }
 
 /**
- * Closures in effect past a route's ends, such as the Ebbetts Pass winter
- * closure past Bear Valley: the route is open as far as its last stop and
- * closed beyond it. `toward` is where the closure runs to, when the source
- * names it.
+ * Closures in effect past a route's ends: the route is open as far as its
+ * last stop and closed beyond it. Each carries what the source says of it:
+ * whether it is seasonal (a standing condition), its severity, its name and
+ * headline. `toward` is where the closure runs to, when the source names it.
+ * The most severe come first.
  */
 export function beyondClosures(c: Chain) {
   const named = (part?: string) => (part ? (/\/([^/]+)\//.exec(part)?.[1] ?? part).trim() : undefined);
   const at = (side: "END" | "START") => {
     const section = side === "END" ? c.sections.at(-1) : c.sections[0];
     const stop = side === "END" ? c.stops.at(-1) : c.stops[0];
-    return (section?.segment.beyond ?? []).filter((b) => b.status === "CLOSED" && (b.side || "END") === side).map((b) => ({
-      side, name: b.name || "Closure", reason: b.reason?.toLowerCase() || undefined, last: stop?.label ?? "", description: b.description || undefined,
-      toward: named(side === "END" ? b.to : b.from),
-    }));
+    return (section?.segment.beyond ?? []).filter((b) => b.status === "CLOSED" && (b.side || "END") === side).map((b) => {
+      const rank = severityRankOf(b);
+      return {
+        side, route: c.route, name: b.name || "Closure", headline: b.headline || undefined, reason: b.reason?.toLowerCase() || undefined, last: stop?.label ?? "", description: b.description || undefined,
+        toward: named(side === "END" ? b.to : b.from),
+        /** Only the source's own `true` makes it seasonal; a response without the field is not. */
+        seasonal: b.seasonal === true, rank, tone: severityTone(rank),
+      };
+    });
   };
-  return [...at("END"), ...at("START")];
+  return [...at("END"), ...at("START")].sort((a, b) => b.rank - a.rank);
 }
-/**
- * "Ebbetts Pass winter closure past Bear Valley". A seasonal closure is a
- * standing condition (it holds for months), so it is worded as a fact about
- * the season, not as today's news, and never leads the page.
- */
-export const beyondText = (b: ReturnType<typeof beyondClosures>[number]) =>
-  `${b.name} ${b.side === "END" ? "past" : "before"} ${b.last}`;
+export type BeyondClosure = ReturnType<typeof beyondClosures>[number];
+/** The closure's name and where it is: "<name> past Bear Valley". */
+export const beyondText = (b: BeyondClosure) => `${b.name} ${b.side === "END" ? "past" : "before"} ${b.last}`;
+/** The closure in one line: the source's headline when it gives one. */
+export const beyondHeadline = (b: BeyondClosure) => b.headline ?? `${b.route}: ${beyondText(b)}`;
+/** The class of closure, from the source's flag: the label is for the class, never for one closure. */
+export const beyondLabel = (b: { seasonal?: boolean | null }) => (b.seasonal === true ? "Seasonal closure" : "Closed");
 
 export type ChainSign = { id: string; place: string; direction?: string; level: string; since: number; coordinates?: Position };
 /**
@@ -241,3 +264,49 @@ export function chainStretch(c: Chain, controls: ChainControl[], nearKm = 8) {
   };
 }
 const listOf = (items: string[]) => (items.length < 3 ? items.join(" and ") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
+
+export type RoadsAnswer = { title: string; lines: string[]; tone: "alarm" | "elevated" | "ok" };
+/**
+ * The Roads page's title and the lines under it. The title is what is rated
+ * above INFO, most severe first: a closure on a monitored section, a closure
+ * past a route's end, then a restriction, chain control, or that all is open.
+ * A closure past a route's end leads only by its own severity; one the source
+ * rates INFO (a seasonal closure is) is a line under the title instead.
+ */
+export function roadsAnswer(chains: Chain[], s: { segments: Segment[]; controls: ChainControl[]; activeWork: number }): RoadsAnswer {
+  const lines: string[] = [];
+  const beyond = chains.flatMap(beyondClosures).sort((a, b) => b.rank - a.rank);
+  const closures = [
+    ...s.segments.filter((x) => x.status === "CLOSED").map((x) => {
+      const name = segmentName(x.headline), notice = closureNotice(x.description);
+      const where = notice?.from ? `past ${notice.from}` : `${name.from} to ${name.to}`;
+      // A closed monitored section is an alarm whatever the source rates the section.
+      return { text: `${name.route} closed ${where}${notice?.reason ? ` — ${notice.reason}` : ""}`, rank: Math.max(3, severityRankOf(x)) };
+    }),
+    ...beyond.filter((b) => b.rank > 0).map((b) => ({ text: beyondHeadline(b), rank: b.rank })),
+  ].sort((a, b) => b.rank - a.rank);
+  const standing = beyond.filter((b) => b.rank <= 0).map(beyondHeadline);
+  for (const c of chains) {
+    // The open stretch from the start of the route, as one phrase.
+    const openRun = [];
+    for (const sec of c.sections) { if (sec.segment.status !== "OPEN") break; openRun.push(sec); }
+    if (openRun.length === c.sections.length) lines.push(`${c.route} open ${c.stops[0].label} to ${c.stops.at(-1)!.label}`);
+    else if (openRun.length) lines.push(`${c.route} open ${c.stops[0].label} to ${c.stops[openRun.length].label}`);
+  }
+  const chained = chains.flatMap((c) => chainStretch(c, s.controls)?.text ?? []).join("; ") || undefined;
+  if (chained) lines.unshift(chained);
+  const restricted = s.segments.filter((x) => x.status === "RESTRICTED").map((x) => `${x.headline} restricted`);
+  if (s.activeWork) lines.push(`${s.activeWork} work zone${s.activeWork === 1 ? "" : "s"} active`);
+  const answer = (): RoadsAnswer => {
+    if (closures.length) return { title: closures.map((x) => x.text).join("; "), lines: [...restricted, ...lines], tone: closures[0].rank >= 3 ? "alarm" : "elevated" };
+    if (restricted.length) return { title: restricted.join("; "), lines, tone: "elevated" };
+    if (chained) return { title: chained, lines: lines.filter((l) => l !== chained && !/ open /.test(l)), tone: "elevated" };
+    if (!s.segments.length) return { title: "Route status unavailable", lines: lines.filter((l) => !/ open /.test(l)), tone: "ok" };
+    // "Open" is only said of sections the source reports open; any other status (maintenance, unspecified) is named.
+    const other = s.segments.filter((x) => x.status !== "OPEN");
+    if (other.length) return { title: other.map((x) => `${x.headline}: ${x.status.toLowerCase().replaceAll("_", " ")}`).join("; "), lines, tone: "elevated" };
+    return { title: "All monitored routes are open", lines: lines.filter((l) => !/ open /.test(l)), tone: "ok" };
+  };
+  const a = answer();
+  return { ...a, lines: [...a.lines, ...standing] };
+}

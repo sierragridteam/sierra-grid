@@ -35,7 +35,8 @@ export function roadMapEntries(
         (closed
           ? "Caltrans reports a closure at this marker. The point does not establish the complete closure extent."
           : "The source supplied a restriction at this location."),
-      tone: closed ? "alarm" : "brass",
+      // A closure point is as loud as the source rates it, like an incident below: a seasonal pass closure is rated low.
+      tone: closed && p.severityRank >= 2 ? "alarm" : "brass",
     });
   }
   for (const feature of layers.road_incident?.features || []) {

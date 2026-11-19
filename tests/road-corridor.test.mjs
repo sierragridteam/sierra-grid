@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chainStretch, chainCheckpoints, chainExtent, beyondClosures, beyondText, alongRoute, closureNotice, routeChains, segmentName, signBoard, workJobs } from "../src/lib/road-corridor.ts";
+import { chainStretch, chainCheckpoints, chainExtent, beyondClosures, beyondHeadline, beyondLabel, beyondText, roadsAnswer, severityRankOf, severityTone, alongRoute, closureNotice, routeChains, segmentName, signBoard, workJobs } from "../src/lib/road-corridor.ts";
 
 const seg = (headline, coordinates, extra = {}) => ({ id: headline, headline, status: "OPEN", coordinates, ...extra });
 
@@ -57,16 +57,25 @@ test("work rows are named by the work and its place; the route is the group", as
   assert.equal(workName("Road work", "Somewhere").route, "Other roads");
 });
 
-test("a seasonal closure past the last stop leaves the route open to it and names where it runs to", () => {
-  const [hwy4] = routeChains([
-    seg("Hwy 4 — Angels Camp to Arnold", [[-120.5, 38.0], [-120.3, 38.2]]),
-    seg("Hwy 4 — Arnold to Bear Valley", [[-120.3, 38.2], [-120.0, 38.4]], { beyond: [
-      { name: "Ebbetts Pass winter closure", status: "CLOSED", side: "END", reason: "snow", from: "0.5 mi east of the Jct of SR 207 /Mt Reba Turnoff/", to: "the Jct of SR 89 /Ebbetts Pass/", description: "Is closed from …" },
-    ] }),
-  ]);
+// The road_segment layer's `beyond` entry as the API sends it since 2026-11-19.
+const winter = {
+  name: "Ebbetts Pass winter closure", status: "CLOSED", side: "END", seasonal: true, severity: "INFO", severityRank: 0,
+  headline: "Hwy 4: Ebbetts Pass winter closure (past Bear Valley) — snow", source: "road_condition", reason: "snow",
+  description: "Is closed from the Mt. Reba turnoff to the Jct of SR 89 /Ebbetts Pass/ (Alpine Co) - Due to snow", from: "the Mt. Reba turnoff", to: "the Jct of SR 89 /Ebbetts Pass/",
+};
+const hwy4With = (beyond, extra = {}) => routeChains([
+  seg("Hwy 4 — Angels Camp to Arnold", [[-120.5, 38.0], [-120.3, 38.2]]),
+  seg("Hwy 4 — Arnold to Bear Valley", [[-120.3, 38.2], [-120.0, 38.4]], { beyond, ...extra }),
+]);
+const segmentsOf = (chains) => chains.flatMap((c) => c.sections.map((x) => x.segment));
+const answerFor = (chains, controls = [], activeWork = 0) => roadsAnswer(chains, { segments: segmentsOf(chains), controls, activeWork });
+
+test("a closure past the last stop leaves the route open to it and names where it runs to", () => {
+  const [hwy4] = hwy4With([winter]);
   const [b] = beyondClosures(hwy4);
   assert.deepEqual([b.side, b.name, b.last, b.toward, b.reason], ["END", "Ebbetts Pass winter closure", "Bear Valley", "Ebbetts Pass", "snow"]);
   assert.equal(beyondText(b), "Ebbetts Pass winter closure past Bear Valley");
+  assert.equal(beyondHeadline(b), winter.headline, "the source's own line is used when it gives one");
   assert.equal(hwy4.sections.every((x) => x.segment.status === "OPEN"), true);
   // A closure listed on a middle section, or one that is not a closure, is not a route-end closure.
   const [other] = routeChains([
@@ -75,6 +84,65 @@ test("a seasonal closure past the last stop leaves the route open to it and name
   ]);
   assert.deepEqual(beyondClosures(other), []);
   assert.deepEqual(beyondClosures(routeChains([seg("Hwy 49 — Angels Camp to Sonora", [[-121, 38], [-121, 38.2]])])[0]), []);
+});
+
+test("whether a closure past a road's end is seasonal comes from the API's flag, never from its name, reason or the date", () => {
+  const [b] = beyondClosures(hwy4With([winter])[0]);
+  assert.deepEqual([b.seasonal, b.rank, b.tone, beyondLabel(b)], [true, 0, "muted", "Seasonal closure"]);
+  // The same name and reason without the flag (an older API, or a closure the source does not call seasonal): not seasonal.
+  const { seasonal: _, ...unflagged } = winter;
+  for (const entry of [unflagged, { ...winter, seasonal: false }, { ...winter, seasonal: null }, { ...winter, seasonal: "true" }, { ...unflagged, reason: "seasonal_closure" }]) {
+    const [x] = beyondClosures(hwy4With([entry])[0]);
+    assert.equal(x.seasonal, false, JSON.stringify(entry.seasonal));
+    assert.equal(beyondLabel(x), "Closed");
+  }
+  // And a flagged closure with no wintry word in it is seasonal all the same.
+  const [summer] = beyondClosures(hwy4With([{ name: "Bridge works", status: "CLOSED", side: "END", seasonal: true, severity: "INFO" }])[0]);
+  assert.deepEqual([summer.seasonal, beyondLabel(summer), beyondHeadline(summer)], [true, "Seasonal closure", "Hwy 4: Bridge works past Bear Valley"]);
+});
+
+test("a closure past a road's end is as prominent as its own severity", () => {
+  assert.deepEqual([0, 1, 2, 3, 4].map(severityTone), ["muted", "muted", "elevated", "alarm", "alarm"]);
+  assert.equal(severityRankOf({ severity: "SEVERE" }), 3, "the name is read when no rank is sent");
+  assert.equal(severityRankOf({ severity: "INFO", severityRank: 2 }), 2, "the source's rank wins");
+  assert.equal(severityRankOf({}), 0, "unrated is as quiet as INFO");
+  assert.equal(severityRankOf({ severity: "SOMETHING_NEW" }), 0);
+  const slide = { name: "Rockslide closure", status: "CLOSED", side: "END", seasonal: false, severity: "SEVERE", severityRank: 3, headline: "Hwy 4: rockslide closure (past Bear Valley)" };
+  const washout = { name: "Washout", status: "CLOSED", side: "END", severity: "MODERATE", severityRank: 2, headline: "Hwy 4: washout (past Bear Valley)" };
+  const got = beyondClosures(hwy4With([winter, washout, slide])[0]);
+  assert.deepEqual(got.map((b) => [b.name, b.tone, b.seasonal]), [["Rockslide closure", "alarm", false], ["Washout", "elevated", false], ["Ebbetts Pass winter closure", "muted", true]], "most severe first, whatever the source order");
+});
+
+test("the Roads title for today's data: chains lead, the seasonal closure is the last line under it", () => {
+  const chains = [...hwy4With([winter]), ...routeChains([seg("Hwy 49 — Angels Camp to Sonora", [[-121, 38], [-121, 38.2]])])];
+  const r2 = { id: "cc:hwy4:r2", level: "R2", highway: "Highway 4", place: "Blue Lake Springs to Mount Reba Road", since: 0, coordinates: [-120.3, 38.2], from: "Blue Lake Springs", to: "Mount Reba Road" };
+  assert.deepEqual(answerFor(chains, [r2], 1), {
+    title: "Chains required on Hwy 4 from Blue Lake Springs to Mount Reba Road (R2)",
+    lines: ["1 work zone active", "Hwy 4: Ebbetts Pass winter closure (past Bear Valley) — snow"],
+    tone: "elevated",
+  });
+  // Nothing else going on: the routes are open, and the seasonal closure is still only a line.
+  assert.deepEqual(answerFor(chains), { title: "All monitored routes are open", lines: [winter.headline], tone: "ok" });
+});
+
+test("the Roads title: a closure past a road's end that is not seasonal leads by its own severity", () => {
+  const slide = { name: "Rockslide closure", status: "CLOSED", side: "END", seasonal: false, severity: "SEVERE", severityRank: 3, headline: "Hwy 4: rockslide closure (past Bear Valley)" };
+  const severe = answerFor(hwy4With([winter, slide]));
+  assert.equal(severe.title, "Hwy 4: rockslide closure (past Bear Valley)");
+  assert.equal(severe.tone, "alarm");
+  assert.deepEqual(severe.lines, ["Hwy 4 open Angels Camp to Bear Valley", winter.headline]);
+  // Rated moderate: it still leads, without the alarm. No flag at all behaves the same as `seasonal: false`.
+  const { seasonal: _, ...moderate } = { ...slide, severity: "MODERATE", severityRank: 2 };
+  assert.deepEqual([answerFor(hwy4With([moderate])).title, answerFor(hwy4With([moderate])).tone], [slide.headline, "elevated"]);
+  // The flag alone does not rank anything: the same winter closure without it, still INFO, is still a line.
+  const { seasonal: __, ...unflagged } = winter;
+  assert.deepEqual(answerFor(hwy4With([unflagged])), { title: "All monitored routes are open", lines: [winter.headline], tone: "ok" });
+  // And one the source flags seasonal but rates severe leads: prominence is the severity's alone.
+  assert.equal(answerFor(hwy4With([{ ...winter, severity: "SEVERE", severityRank: 3 }])).tone, "alarm");
+  // A closed monitored section and a moderate closure past the end: the more severe is named first.
+  const closed = hwy4With([moderate], { status: "CLOSED", description: "Is closed from /Arnold/ to /Bear Valley/ - Due to snow" });
+  assert.equal(answerFor(closed).title, "Hwy 4 closed past Arnold — snow; Hwy 4: rockslide closure (past Bear Valley)");
+  assert.equal(answerFor(closed).tone, "alarm");
 });
 
 // The chain_control layer as the API sends it since 2026-11-14: one feature per stretch, its signs nested.
