@@ -7,6 +7,7 @@
  */
 import type { Report, Revision } from "./event-model.ts";
 import { regionTimeZone } from "./time.ts";
+import { beyondLabel, severityRankOf, severityTone } from "./road-corridor.ts";
 
 const HOUR = 3_600_000, DAY = 24 * HOUR;
 const ms = (value: unknown) => (typeof value === "string" && value ? Date.parse(value) : NaN);
@@ -228,7 +229,17 @@ export function sourceRecord(input: { events: Read<Report[]>; history: Read<Revi
 // ---- Roads --------------------------------------------------------------
 
 type Chain = { level?: string; highway?: string; from?: { place?: string }; to?: { place?: string } };
-type Road = { name?: string; section?: string; status?: string; beyond?: { name?: string }[] };
+type RoadBeyond = { name?: string; seasonal?: boolean | null; severity?: string | null; severityRank?: number | null };
+type Road = { name?: string; section?: string; status?: string; beyond?: RoadBeyond[] };
+/**
+ * A closure past a road's end coming into effect: "Seasonal closure" only
+ * when the record says every one is seasonal, and as loud as the most severe
+ * is rated. A record that carries neither is a plain, quiet "Closure".
+ */
+const beyondBadge = (beyond: RoadBeyond[]): RecordBadge => ({
+  label: beyond.length && beyond.every((b) => b.seasonal === true) ? beyondLabel({ seasonal: true }) : "Closure",
+  tone: severityTone(Math.max(0, ...beyond.map(severityRankOf))),
+});
 const shortHighway = (highway?: string) => String(highway ?? "").replace(/^Highway /, "Hwy ");
 const extent = (c?: Chain) => (!c?.from?.place ? "" : !c.to?.place || c.to.place.toLowerCase() === c.from.place.toLowerCase() ? c.from.place : `${c.from.place} to ${c.to.place}`);
 const chainTone = (level?: string): BadgeTone => (level === "R3" ? "alarm" : "elevated");
@@ -245,7 +256,7 @@ const roadChangeBadge = (status?: string): RecordBadge => (status === "OPEN" ? {
 /**
  * The road record from CHAIN_CONTROL and ROAD_SEGMENT revisions, newest
  * first: a requirement posted, changed and lifted; a road closing and
- * reopening; a seasonal closure starting and ending.
+ * reopening; a closure past its end starting and ending.
  *
  * A chain requirement's event is a slot (one per highway and level): it is
  * ACTIVE while posted, not ACTIVE once lifted, and ACTIVE again in a new
@@ -282,7 +293,7 @@ export function roadRecord(revisions: Revision[]): RecordEntry[] {
       const names = (v?: Road) => (v?.beyond ?? []).map((b) => b.name).filter(Boolean).join("; ");
       if (!was) out.push({ ...base, at: seen, label: `${name}: ${roadWord(road?.status)}`, detail: names(road) || undefined, badge: roadStateBadge(road?.status) });
       else if (was.status !== road?.status) out.push({ ...base, at: seen, label: `${name} ${road?.status === "OPEN" ? "reopened" : road?.status === "CLOSED" ? "closed" : `now ${roadWord(road?.status)}`}`, detail: `was ${roadWord(was.status)}`, badge: roadChangeBadge(road?.status) });
-      else if (names(was) !== names(road)) out.push({ ...base, at: seen, label: names(road) ? `${names(road)} in effect` : `${names(was)} ended`, detail: name, badge: names(road) ? { label: "Seasonal closure", tone: "elevated" } : { label: "Closure ended", tone: "ok" } });
+      else if (names(was) !== names(road)) out.push({ ...base, at: seen, label: names(road) ? `${names(road)} in effect` : `${names(was)} ended`, detail: name, badge: names(road) ? beyondBadge(road?.beyond ?? []) : { label: "Closure ended", tone: "ok" } });
     }
   }
   return out.filter((e) => Number.isFinite(e.at)).sort((a, b) => b.at - a.at || b.revision - a.revision || a.id.localeCompare(b.id));

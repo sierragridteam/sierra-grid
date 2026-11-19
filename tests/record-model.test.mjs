@@ -258,6 +258,12 @@ test("a road's record is its closures, reopenings and seasonal closures, not whe
     ["Hwy 4 Arnold to Bear Valley closed", "was open", "Closed", "alarm"],
     ["Hwy 4 Arnold to Bear Valley reopened", "was closed", "Reopened", "ok"],
   ]);
+  // A closure coming into effect is "Seasonal closure" only when the record flags it, and as loud as it is rated.
+  const started = (beyond) => roadRecord([rev(3, "2026-11-18T09:00:00Z", road("OPEN", beyond)), rev(2, "2026-11-17T09:00:00Z", road("OPEN"))])[0];
+  assert.deepEqual([started(winter).label, started(winter).badge], ["Ebbetts Pass winter closure in effect", { label: "Closure", tone: "muted" }], "today's record carries neither the flag nor a severity");
+  assert.deepEqual(started([{ name: "Ebbetts Pass winter closure", seasonal: true, severity: "INFO" }]).badge, { label: "Seasonal closure", tone: "muted" });
+  assert.deepEqual(started([{ name: "Rockslide closure", seasonal: false, severity: "SEVERE" }]).badge, { label: "Closure", tone: "alarm" });
+  assert.deepEqual(started([{ name: "Winter closure", seasonal: true, severity: "INFO" }, { name: "Washout", severityRank: 2 }]).badge, { label: "Closure", tone: "elevated" });
   // The reopening at revision 4 also brought the seasonal closure; the status change leads.
   // Without the revision before it, a row says the state rather than guess the change.
   const lone = roadRecord([rev(7, "2026-11-17T08:00:00Z", road("CLOSED"))])[0];

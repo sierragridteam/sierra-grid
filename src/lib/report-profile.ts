@@ -610,7 +610,7 @@ function chainControl(report: Report, revisions: Revision[], now: number, comple
 }
 
 type RoadCause = { status?: string; source?: string; eventId?: string; text?: string };
-type RoadSegment = { roadId?: string; name?: string; section?: string; status?: string; beyond?: { name?: string; side?: string; status?: string }[]; causes?: RoadCause[] };
+type RoadSegment = { roadId?: string; name?: string; section?: string; status?: string; beyond?: { name?: string; side?: string; status?: string; seasonal?: boolean | null }[]; causes?: RoadCause[] };
 /**
  * What set a road's status, in the API's terms: where it came from and, for an
  * incident, its log number. The words of an incident are on its own report
@@ -628,7 +628,7 @@ const roadStatusText = (v?: string) => ({ OPEN: "Open", CLOSED: "Closed", RESTRI
 
 /**
  * A monitored road: an event that never ends, revised when the road closes or
- * reopens or a seasonal closure past its end starts or ends. The timeline is
+ * reopens or a closure past its end starts or ends. The timeline is
  * those changes. How long it has had its status is known only when the
  * revision where it changed is loaded; otherwise it is "at least" as long as
  * the record reaches.
@@ -638,7 +638,7 @@ function roadSegment(report: Report, revisions: Revision[], now: number, complet
   const fields = (e: Report) => {
     const v = e.roadSegment as RoadSegment | undefined;
     // "Because" only once the API sends causes: an older revision has none, and that is not "no cause".
-    return { Road: v ? roadStatusText(v.status) : undefined, "Past the end": v ? (v.beyond ?? []).map((b) => b.name).filter(Boolean).join("; ") || "No seasonal closure" : undefined,
+    return { Road: v ? roadStatusText(v.status) : undefined, "Past the end": v ? (v.beyond ?? []).map((b) => b.name).filter(Boolean).join("; ") || "No closure" : undefined,
       Because: v?.causes?.length ? v.causes.map(roadCauseText).join("; ") : undefined };
   };
   const all = changes(revisions, fields).filter((e) => !/^(Status|Severity):/.test(e.label));
@@ -651,7 +651,7 @@ function roadSegment(report: Report, revisions: Revision[], now: number, complet
     when: !held ? "Monitored road" : held.kind === "changed" ? `${roadStatusText(r.status)} since ${dayLabel.format(held.at)}, ${clock.format(held.at)} PT` : `${roadStatusText(r.status)} for at least ${duration(now - held.at)}`,
     stats: [
       { label: "Road", value: roadStatusText(r.status), sub: !held ? undefined : held.kind === "changed" ? `for ${duration(now - held.at)}, ${heldNote(held)}` : `for at least ${duration(now - held.at)} · ${heldNote(held)}` },
-      ...(r.beyond ?? []).map((b) => ({ label: b.side === "START" ? "Before the start" : "Past the end", value: roadStatusText(b.status), sub: b.name })),
+      ...(r.beyond ?? []).map((b) => ({ label: b.side === "START" ? "Before the start" : "Past the end", value: roadStatusText(b.status), sub: [b.name, b.seasonal === true ? "seasonal closure" : ""].filter(Boolean).join(" · ") || undefined })),
     ],
     sections: r.causes?.length ? [{ title: `Why it is ${roadStatusText(r.status).toLowerCase()}`, items: r.causes.map((c) => ({ label: roadStatusText(c.status), value: roadCauseText(c) })) }] : [],
     identifiers: [],
