@@ -11,7 +11,7 @@ import { stateUrl } from "../state";
 import { regionTimeZone } from "../time";
 import { ageText } from "../mesh-fleet";
 import {
-  alongRoute, beyondClosures, beyondLabel, beyondText, chainBands, chainCheckpoints, chainFigure, chainExtent, chainRead, chainStretch, closureNotice, fitLabel, labelRoom, roadsAnswer, routeChainNote, routeChains, routeSlice, sectionChains, sectionLabels, segmentName, severityRankOf, severityTone, signBoard, workJobs, workName,
+  alongRoute, beyondClosures, beyondLabel, beyondText, chainBands, chainCheckpoints, chainFigure, chainExtent, chainRead, chainStretch, closureNotice, fitLabel, labelRoom, roadsAnswer, routeChainNote, routeChains, routeSlice, sectionChains, sectionLabels, segmentName, severityRankOf, severityTone, signBoard, signCount, signPlaces, workJobs, workName,
   type Chain, type ChainBand, type ChainControl, type ChainRead, type Position, type Segment, type Sign, type WorkWindow,
 } from "../road-corridor";
 import { createStore, region } from "@sierragridteam/design-system/lib/region";
@@ -233,8 +233,8 @@ export async function mount(ctx: Context) {
             }))}</div>` : html`<p class="meta">${!s.loaded ? "Loading reports…" : reportsUnknown ? "Road reports are unavailable right now." : "No active road reports."}</p>`}
           ${s.loaded && !chpActive.length ? html`<p class="meta roads-chp-none">${reportsUnknown || (s.chp && s.chp.status !== "OK") || !s.chp ? "CHP traffic incidents could not be checked right now." : "No CHP traffic incidents in the region right now."}</p>` : nothing}`)}
         ${recordPanel(s, anyRecordUrl)}
-        ${card({ variant: "panel", title: "Highway signs", kicker: `${board.showing.reduce((n, x) => n + x.count, 0)} of ${s.signs.length} showing a message`, as: "section", class: "roads-signs" },
-          html`${board.showing.length ? html`<div class="roads-sign-grid">${board.showing.map((x) => messageSign({ location: x.location, route: x.route, direction: x.direction, pages: x.pages, inService: x.inService,
+        ${card({ variant: "panel", title: "Highway signs", kicker: signCount(board, s.signs.length), as: "section", class: "roads-signs" },
+          html`${board.showing.length ? html`<div class="roads-sign-grid">${board.showing.map((x) => messageSign({ location: signPlaces(x.locations), route: x.route, direction: x.direction, pages: x.pages, inService: x.inService,
               detail: [x.count > 1 ? `${x.count} signs show this` : "", Number.isFinite(x.since) ? `since ${fmt(x.since)}` : ""].filter(Boolean).join(" · ") }))}</div>` : html`<p class="meta">${s.loaded ? "No sign is showing a message." : "Loading signs…"}</p>`}
           ${board.blank.length ? html`<p class="meta">Blank: ${board.blank.map((x) => [x.location, x.inService ? "" : "(not in service)"].filter(Boolean).join(" ")).join(" · ")}</p>` : nothing}`)}
         ${cameraPanel(s)}

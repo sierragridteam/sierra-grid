@@ -182,20 +182,41 @@ export function workJobs(windows: WorkWindow[]) {
 }
 
 export type Sign = { id: string; location: string; route?: string; direction?: string; pages: string[][]; inService: boolean; since?: number; coordinates?: Position };
-/** Signs showing the same message on the same route and direction read as one; blanks are counted, not shown. */
+/**
+ * Signs showing the same message on the same route and direction read as one
+ * face; blanks are counted, not shown. A face that stands for several signs
+ * keeps every sign's place (`locations`): the signs are in different places,
+ * and a card naming only the first hid the others. `since` is the earliest.
+ */
 export function signBoard(signs: Sign[]) {
   const text = (s: Sign) => s.pages.map((p) => p.filter((l) => l.trim()).join(" ")).filter(Boolean).join(" / ");
-  const showing = new Map<string, Sign & { count: number }>();
+  const showing = new Map<string, Sign & { count: number; locations: string[] }>();
   const blank: Sign[] = [];
   for (const s of signs) {
     if (!s.inService || !text(s)) { blank.push(s); continue; }
     const key = `${s.route}|${s.direction}|${text(s)}`;
     const seen = showing.get(key);
-    if (seen) seen.count++;
-    else showing.set(key, { ...s, count: 1 });
+    if (!seen) { showing.set(key, { ...s, count: 1, locations: [s.location] }); continue; }
+    seen.count++;
+    if (s.location && !seen.locations.includes(s.location)) seen.locations.push(s.location);
+    if (Number.isFinite(s.since) && !(Number(seen.since) <= Number(s.since))) seen.since = s.since;
   }
   return { showing: [...showing.values()], blank, text };
 }
+/** Where a face's signs stand: every place up to three, then the first two and how many more. */
+export const signPlaces = (locations: string[]) => {
+  const places = locations.filter(Boolean);
+  return places.length <= 3 ? places.join(" · ") : `${places.slice(0, 2).join(" · ")} · and ${places.length - 2} more`;
+};
+/**
+ * The signs panel's count line. It counts signs, and the panel shows one face
+ * per message, so when signs share a message it says how many faces follow:
+ * "4 of 6 showing a message" above three cards read as a miscount.
+ */
+export const signCount = (board: { showing: { count: number }[] }, total: number) => {
+  const signs = board.showing.reduce((n, x) => n + x.count, 0), faces = board.showing.length;
+  return `${signs} of ${total} showing a message${faces < signs ? ` · ${faces} different message${faces === 1 ? "" : "s"}` : ""}`;
+};
 
 /** "Hwy 4 one-way traffic control (Drainage Work)" at "Hwy 4 at Horeshoe Drive (Right), near Hathaway Pines" → Hwy 4 / One-way traffic control · drainage work / Horeshoe Drive, near Hathaway Pines. */
 export function workName(headline: string, area: string) {
