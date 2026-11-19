@@ -255,6 +255,22 @@ export type ChainControl = {
 const titleCase = (text: string) => text.toLowerCase().replace(/(^|[\s./(])([a-z])/g, (_, a, b) => a + b.toUpperCase());
 const shortRoute = (highway: string) => highway.replace(/^Highway /, "Hwy ");
 const levelRank = (level: string) => Number(/\d/.exec(level)?.[0] ?? 0);
+/**
+ * The highest chain level a road's stored record names (`roadSegment.chains`
+ * on its event), "" for none. A road under chains is open: the record says
+ * the requirement beside the status, and whoever words it goes by the
+ * highest level, as the record's own headline does.
+ */
+/**
+ * When the API began recording chains on a road's event (sierra-data #109,
+ * writing from 2026-11-19 22:01Z). A revision saved before this lists no
+ * chains whatever the road was under: for it they are not known, which is not
+ * "none", so nothing may say a requirement started at the first revision
+ * after it (Hwy 4 Arnold to Bear Valley had been under R2 for 29 hours).
+ */
+export const ROAD_CHAINS_ON_RECORD_FROM = Date.parse("2026-11-19T22:00:00Z");
+export const roadChainLevel = (road?: { chains?: { level?: string | null }[] | null }) =>
+  (road?.chains ?? []).reduce((top, c) => (levelRank(c.level ?? "") > levelRank(top) ? c.level ?? "" : top), "");
 
 /**
  * The checkpoints of a control as places: the two directions at one place are

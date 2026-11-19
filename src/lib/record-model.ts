@@ -7,7 +7,7 @@
  */
 import type { Report, Revision } from "./event-model.ts";
 import { regionTimeZone } from "./time.ts";
-import { beyondLabel, severityRankOf, severityTone } from "./road-corridor.ts";
+import { ROAD_CHAINS_ON_RECORD_FROM, beyondLabel, roadChainLevel, severityRankOf, severityTone } from "./road-corridor.ts";
 
 const HOUR = 3_600_000, DAY = 24 * HOUR;
 const ms = (value: unknown) => (typeof value === "string" && value ? Date.parse(value) : NaN);
@@ -230,7 +230,7 @@ export function sourceRecord(input: { events: Read<Report[]>; history: Read<Revi
 
 type Chain = { level?: string; highway?: string; from?: { place?: string }; to?: { place?: string } };
 type RoadBeyond = { name?: string; seasonal?: boolean | null; severity?: string | null; severityRank?: number | null };
-type Road = { name?: string; section?: string; status?: string; beyond?: RoadBeyond[] };
+type Road = { name?: string; section?: string; status?: string; beyond?: RoadBeyond[]; chains?: { level?: string; eventId?: string }[] };
 /**
  * A closure past a road's end coming into effect: "Seasonal closure" only
  * when the record says every one is seasonal, and as loud as the most severe
@@ -256,7 +256,17 @@ const roadChangeBadge = (status?: string): RecordBadge => (status === "OPEN" ? {
 /**
  * The road record from CHAIN_CONTROL and ROAD_SEGMENT revisions, newest
  * first: a requirement posted, changed and lifted; a road closing and
- * reopening; a closure past its end starting and ending.
+ * reopening, going under chains and coming out; a closure past its end
+ * starting and ending.
+ *
+ * Chains are in it twice, on purpose. The requirement's own entries say the
+ * highway and how far it runs ("R2 posted · Hwy 4, Big Trees Park to Mount
+ * Reba Road"); the road's say which monitored road is under it, which is
+ * news of its own when a stretch grows down onto the next road or shrinks
+ * off it with no posting or lifting at all. A road's revision that changes
+ * its status and its chains at once is two entries. Chains are on a road's
+ * record from `ROAD_CHAINS_ON_RECORD_FROM`; against a revision older than
+ * that, a requirement is not said to have started.
  *
  * A chain requirement's event is a slot (one per highway and level): it is
  * ACTIVE while posted, not ACTIVE once lifted, and ACTIVE again in a new
@@ -273,7 +283,7 @@ export function roadRecord(revisions: Revision[]): RecordEntry[] {
   for (const r of revisions) byEvent.set(r.event.id, (byEvent.get(r.event.id) ?? new Map()).set(Number(r.revision), r));
   const out: RecordEntry[] = [];
   for (const r of revisions) {
-    const n = Number(r.revision), event = r.event, previous = byEvent.get(event.id)?.get(n - 1)?.event;
+    const n = Number(r.revision), event = r.event, prior = byEvent.get(event.id)?.get(n - 1), previous = prior?.event;
     const base = { id: event.id, revision: n }, seen = ms(r.observedAt) || ms(r.ingestedAt);
     if (event.layer === "CHAIN_CONTROL") {
       const c = event.chainControl as Chain | undefined, was = previous?.chainControl as Chain | undefined;
@@ -291,9 +301,16 @@ export function roadRecord(revisions: Revision[]): RecordEntry[] {
       const road = event.roadSegment as Road | undefined, was = previous?.roadSegment as Road | undefined;
       const name = [road?.name, road?.section].filter(Boolean).join(" ") || "Road";
       const names = (v?: Road) => (v?.beyond ?? []).map((b) => b.name).filter(Boolean).join("; ");
-      if (!was) out.push({ ...base, at: seen, label: `${name}: ${roadWord(road?.status)}`, detail: names(road) || undefined, badge: roadStateBadge(road?.status) });
+      const level = roadChainLevel(road), before = roadChainLevel(was);
+      if (!was) out.push({ ...base, at: seen, label: `${name}: ${roadWord(road?.status)}${level ? `, chains required (${level})` : ""}`, detail: names(road) || undefined,
+        badge: level && road?.status === "OPEN" ? { label: `Chains ${level}`, tone: chainTone(level) } : roadStateBadge(road?.status) });
       else if (was.status !== road?.status) out.push({ ...base, at: seen, label: `${name} ${road?.status === "OPEN" ? "reopened" : road?.status === "CLOSED" ? "closed" : `now ${roadWord(road?.status)}`}`, detail: `was ${roadWord(was.status)}`, badge: roadChangeBadge(road?.status) });
       else if (names(was) !== names(road)) out.push({ ...base, at: seen, label: names(road) ? `${names(road)} in effect` : `${names(was)} ended`, detail: name, badge: names(road) ? beyondBadge(road?.beyond ?? []) : { label: "Closure ended", tone: "ok" } });
+      // Beside the status, never instead of it: chains do not close a road. A
+      // revision from before chains were recorded does not say there were none.
+      const chainsKnown = (ms(prior?.ingestedAt) || ms(prior?.observedAt)) >= ROAD_CHAINS_ON_RECORD_FROM;
+      if (was && chainsKnown && level !== before) out.push(!level ? { ...base, at: seen, label: `${name}: chains lifted`, detail: `was ${before}`, badge: { label: "Chains lifted", tone: "ok" } }
+        : { ...base, at: seen, label: before ? `${name}: chains now ${level}` : `${name}: chains required (${level})`, detail: before ? `was ${before}` : undefined, badge: { label: `Chains ${level}`, tone: chainTone(level) } });
     }
   }
   return out.filter((e) => Number.isFinite(e.at)).sort((a, b) => b.at - a.at || b.revision - a.revision || a.id.localeCompare(b.id));
