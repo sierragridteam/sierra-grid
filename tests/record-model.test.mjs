@@ -271,6 +271,45 @@ test("a road's record is its closures, reopenings and seasonal closures, not whe
   assert.deepEqual(roadRecord([rev(7, "2026-11-17T08:00:00Z", road("SOMETHING_NEW"))])[0].badge, { label: "Status unknown", tone: "muted" });
 });
 
+test("a road under chains is open: the record says the requirement beside the status, by its highest level", () => {
+  const under = (status, ...levels) => ({ ...road(status), roadSegment: { ...road(status).roadSegment, chains: levels.map((level) => ({ level, eventId: `cc:hwy4:${level.toLowerCase()}` })) } });
+  const record = roadRecord([
+    rev(8, "2026-11-22T20:00:00Z", under("OPEN")),
+    rev(7, "2026-11-22T08:00:00Z", under("OPEN", "R1")),
+    rev(6, "2026-11-22T02:00:00Z", { ...under("OPEN", "R2"), roadSegment: { ...under("OPEN", "R2").roadSegment, chains: [{ level: "R2", eventId: "cc:hwy4:r2:2" }] } }), // the stretch renumbered: nothing to say
+    rev(5, "2026-11-21T22:00:00Z", under("OPEN", "R2", "R1")),
+    rev(4, "2026-11-21T20:00:00Z", under("CLOSED", "R2", "R1")),
+    rev(3, "2026-11-21T18:00:00Z", under("OPEN", "R1")),
+    rev(2, "2026-11-21T16:00:00Z", under("OPEN", "R1")), // nothing shown here changed
+    rev(1, "2026-11-20T16:00:00Z", under("OPEN")),
+  ]);
+  assert.deepEqual(record.map((e) => [e.label, e.detail, e.badge.label, e.badge.tone]), [
+    ["Hwy 4 Arnold to Bear Valley: chains lifted", "was R1", "Chains lifted", "ok"],
+    ["Hwy 4 Arnold to Bear Valley: chains now R1", "was R2", "Chains R1", "elevated"],
+    ["Hwy 4 Arnold to Bear Valley reopened", "was closed", "Reopened", "ok"],
+    // Closed and raised in one revision: two entries, the status first.
+    ["Hwy 4 Arnold to Bear Valley closed", "was open", "Closed", "alarm"],
+    ["Hwy 4 Arnold to Bear Valley: chains now R2", "was R1", "Chains R2", "elevated"],
+    ["Hwy 4 Arnold to Bear Valley: chains required (R1)", undefined, "Chains R1", "elevated"],
+  ]);
+  assert.ok(record.every((e) => e.id === "road:hwy4-arnold-bearvalley"));
+  const r3 = roadRecord([rev(3, "2026-11-22T02:00:00Z", under("OPEN", "R3")), rev(2, "2026-11-22T01:00:00Z", under("OPEN"))])[0];
+  assert.deepEqual([r3.label, r3.badge], ["Hwy 4 Arnold to Bear Valley: chains required (R3)", { label: "Chains R3", tone: "alarm" }]);
+  // Without the revision before it, a row says the state and claims no change.
+  const lone = roadRecord([rev(7, "2026-11-22T08:00:00Z", under("OPEN", "R2"))])[0];
+  assert.deepEqual([lone.label, lone.badge], ["Hwy 4 Arnold to Bear Valley: open, chains required (R2)", { label: "Chains R2", tone: "elevated" }]);
+  const shut = roadRecord([rev(7, "2026-11-22T08:00:00Z", under("CLOSED", "R2"))])[0];
+  assert.deepEqual([shut.label, shut.badge], ["Hwy 4 Arnold to Bear Valley: closed, chains required (R2)", { label: "Closed", tone: "alarm" }], "closed is the stronger statement");
+  // Chains went on a road's record on 2026-11-19 22:00Z. The revision before that lists none whatever the road
+  // was under, so the first one after it does not say a requirement started (R2 had been posted for 29 hours).
+  const deploy = roadRecord([rev(12, "2026-11-19T22:02:26Z", under("RESTRICTED", "R2")), rev(11, "2026-11-19T21:39:48Z", under("RESTRICTED")), rev(10, "2026-11-19T02:32:25Z", under("OPEN"))]);
+  assert.deepEqual(deploy.map((e) => e.label), ["Hwy 4 Arnold to Bear Valley now restricted", "Hwy 4 Arnold to Bear Valley: open"], "revision 12 is no entry; 11 and 10 are theirs");
+  // From there on the record knows: lifting it is an entry.
+  assert.deepEqual(roadRecord([rev(13, "2026-11-20T18:00:00Z", under("OPEN")), rev(12, "2026-11-19T22:02:26Z", under("OPEN", "R2"))]).map((e) => [e.label, e.detail])[0], ["Hwy 4 Arnold to Bear Valley: chains lifted", "was R2"]);
+  // A record that carries no chains at all (an older Grid) reads as before.
+  assert.deepEqual(roadRecord([rev(2, "2026-11-22T02:00:00Z", road("CLOSED")), rev(1, "2026-11-22T01:00:00Z", road("OPEN"))]).map((e) => e.label), ["Hwy 4 Arnold to Bear Valley closed"]);
+});
+
 test("no badge is shared between a lifted requirement, a reopened road and an ended seasonal closure", () => {
   const record = roadRecord([
     rev(2, "2026-11-17T06:00:00Z", chain("cc:hwy4:r3", "R3", "A", "B", { status: "RESOLVED" })), rev(1, "2026-11-16T06:00:00Z", chain("cc:hwy4:r3", "R3", "A", "B")),

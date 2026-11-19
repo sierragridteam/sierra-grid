@@ -7,6 +7,7 @@
 import type { Report, Revision } from "./event-model.ts";
 import { humanize, isReading } from "./event-model.ts";
 import { regionTimeZone } from "./time.ts";
+import { ROAD_CHAINS_ON_RECORD_FROM, roadChainLevel } from "./road-corridor.ts";
 import { OTHER_OVERDUE, REPEATER_EVERY, REPEATER_OVERDUE, onRelaySchedule } from "./mesh-monitors.ts";
 
 export type ProfileStat = { label: string; value: string; sub?: string; progress?: { value: number; text: string } };
@@ -610,7 +611,7 @@ function chainControl(report: Report, revisions: Revision[], now: number, comple
 }
 
 type RoadCause = { status?: string; source?: string; eventId?: string; text?: string };
-type RoadSegment = { roadId?: string; name?: string; section?: string; status?: string; beyond?: { name?: string; side?: string; status?: string; seasonal?: boolean | null }[]; causes?: RoadCause[] };
+type RoadSegment = { roadId?: string; name?: string; section?: string; status?: string; beyond?: { name?: string; side?: string; status?: string; seasonal?: boolean | null }[]; causes?: RoadCause[]; chains?: { level?: string; eventId?: string }[] };
 /**
  * What set a road's status, in the API's terms: where it came from and, for an
  * incident, its log number. The words of an incident are on its own report
@@ -628,21 +629,28 @@ const roadStatusText = (v?: string) => ({ OPEN: "Open", CLOSED: "Closed", RESTRI
 
 /**
  * A monitored road: an event that never ends, revised when the road closes or
- * reopens or a closure past its end starts or ends. The timeline is
- * those changes. How long it has had its status is known only when the
+ * reopens, chains are required or lifted on it, or a closure past its end
+ * starts or ends. The timeline is those changes. Chains are a fact beside
+ * the status (a road under chains is open), so they are their own figure. How long it has had its status is known only when the
  * revision where it changed is loaded; otherwise it is "at least" as long as
  * the record reaches.
  */
 function roadSegment(report: Report, revisions: Revision[], now: number, complete: boolean): Profile {
   const r = report.roadSegment as RoadSegment;
+  // Chains are on the record from ROAD_CHAINS_ON_RECORD_FROM. An older revision lists none whatever the road was under: not known.
+  const recorded = revisions.filter((v) => ms(v.ingestedAt || v.observedAt) >= ROAD_CHAINS_ON_RECORD_FROM), chainsKnown = new Set<Report>(recorded.map((v) => v.event));
   const fields = (e: Report) => {
     const v = e.roadSegment as RoadSegment | undefined;
     // "Because" only once the API sends causes: an older revision has none, and that is not "no cause".
-    return { Road: v ? roadStatusText(v.status) : undefined, "Past the end": v ? (v.beyond ?? []).map((b) => b.name).filter(Boolean).join("; ") || "No closure" : undefined,
+    return { Road: v ? roadStatusText(v.status) : undefined, Chains: v && chainsKnown.has(e) ? (roadChainLevel(v) ? `${roadChainLevel(v)} required` : "None") : undefined, "Past the end": v ? (v.beyond ?? []).map((b) => b.name).filter(Boolean).join("; ") || "No closure" : undefined,
       Because: v?.causes?.length ? v.causes.map(roadCauseText).join("; ") : undefined };
   };
   const all = changes(revisions, fields).filter((e) => !/^(Status|Severity):/.test(e.label));
   const held = heldSince(revisions, (e) => (e.roadSegment as RoadSegment | undefined)?.status, r.status, complete);
+  const chains = roadChainLevel(r);
+  let chainsHeld = chains ? heldSince(recorded, (e) => roadChainLevel(e.roadSegment as RoadSegment | undefined), chains, complete) : undefined;
+  // Held through every revision that records chains, and the one before them is loaded: "at least" since recording began.
+  if (chainsHeld?.kind === "loaded" && recorded.length < revisions.length) chainsHeld = { ...chainsHeld, kind: "recorded" };
   const cutoff = now - BURN_WINDOW_DAYS * DAY;
   const recent = all.filter((e) => e.at >= cutoff), older = all.length - recent.length;
   return {
@@ -651,6 +659,8 @@ function roadSegment(report: Report, revisions: Revision[], now: number, complet
     when: !held ? "Monitored road" : held.kind === "changed" ? `${roadStatusText(r.status)} since ${dayLabel.format(held.at)}, ${clock.format(held.at)} PT` : `${roadStatusText(r.status)} for at least ${duration(now - held.at)}`,
     stats: [
       { label: "Road", value: roadStatusText(r.status), sub: !held ? undefined : held.kind === "changed" ? `for ${duration(now - held.at)}, ${heldNote(held)}` : `for at least ${duration(now - held.at)} · ${heldNote(held)}` },
+      // Only while a requirement is on record: "None" every day of the year is not a figure.
+      ...(chains ? [{ label: "Chains", value: `${chains} required`, sub: !chainsHeld ? undefined : chainsHeld.kind === "changed" ? `for ${duration(now - chainsHeld.at)}, ${heldNote(chainsHeld)}` : `for at least ${duration(now - chainsHeld.at)} · ${heldNote(chainsHeld)}` }] : []),
       ...(r.beyond ?? []).map((b) => ({ label: b.side === "START" ? "Before the start" : "Past the end", value: roadStatusText(b.status), sub: [b.name, b.seasonal === true ? "seasonal closure" : ""].filter(Boolean).join(" · ") || undefined })),
     ],
     sections: r.causes?.length ? [{ title: `Why it is ${roadStatusText(r.status).toLowerCase()}`, items: r.causes.map((c) => ({ label: roadStatusText(c.status), value: roadCauseText(c) })) }] : [],

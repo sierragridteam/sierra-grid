@@ -102,8 +102,8 @@ status reports (road status, burn day)"), so the two do not disagree.
 
 `record-model.ts` reads revisions into what happened. Source health lists each
 feed's status changes and since when it has held its status; Roads lists chain
-requirements posted, changed and lifted, and roads closing and reopening, over
-the last week. It decides every word of those panels, including each entry's
+requirements posted, changed and lifted, and roads closing and reopening and
+going under chains and coming out, over the last week. It decides every word of those panels, including each entry's
 badge (label and tone, in the page's own vocabulary). The rules:
 
 - A read of the record is not read yet, failed, or answered (`Read`). No panel
@@ -115,6 +115,20 @@ badge (label and tone, in the page's own vocabulary). The rules:
   Without it, it says the state ("R2 in effect") and claims no change. A
   chain-control event is a slot per highway and level, so "posted again" is an
   ordinary entry.
+- A road under chains is open. Its record (`roadSegment.chains` on the road's
+  event, since 2026-11-19) names the requirement beside the status, and Roads
+  words it by the highest level (`roadChainLevel`): "Hwy 4 Arnold to Bear
+  Valley: chains required (R2)", "chains now R1", "chains lifted", with the
+  badges "Chains R2" and "Chains lifted". The requirement's own entries ("R2
+  posted · Hwy 4, Big Trees Park to Mount Reba Road") stay beside them: they
+  say how far it runs, the road's say which monitored road is under it, and a
+  stretch that grows onto the next road has only the road's entry. A revision
+  that changes status and chains is two entries. The road's report shows a
+  "Chains" figure only while a requirement is on record. Revisions from
+  before the API recorded chains (`ROAD_CHAINS_ON_RECORD_FROM`, 2026-11-19
+  22:00Z) list none whatever the road was under, so for them chains are not
+  known: the first revision after is not an entry and not "was None", and a
+  requirement held since then reads "for at least …, on record since Nov 19".
 - A period is claimed only when recording covers it. Revision 1 of a standing
   state is where recording began: a health event never revised shows
   "recorded since", and a period that recording began inside is described as

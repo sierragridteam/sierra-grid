@@ -182,8 +182,8 @@ importers:
         specifier: ^0.9.8
         version: 0.9.8(@types/node@26.6.6)(astro@7.4.7(@types/node@26.6.6)(yaml@2.9.1))(chart.js@4.6.1)(maplibre-gl@6.17.0)
       '@sierragridteam/sdk':
-        specifier: ^0.10.0
-        version: 0.10.0
+        specifier: ^0.11.0
+        version: 0.11.0
       astro:
         specifier: ^7.4.7
         version: 7.4.7(@types/node@26.6.6)(yaml@2.9.1)
@@ -963,8 +963,8 @@ packages:
       maplibre-gl:
         optional: true
 
-  '@sierragridteam/sdk@0.10.0':
-    resolution: {integrity: sha512-2dkUU+sXtUAlS3HvlBlRQdKs73NHXPbeAUnyBLaqpR9QgETyCE/4vyrI2zDyZjAz9lTKm3lpKoWyVKeHa91TGw==}
+  '@sierragridteam/sdk@0.11.0':
+    resolution: {integrity: sha512-OIqT5B1M74n/6wuxjJYzYWusti5sHd76WO4d0HmmTRZMz7LoThkMQ8MTCglZRV7T20INhbpai/rGGQPM+6iANA==}
     engines: {node: '>=22'}
 
   '@tybys/wasm-util@0.10.4':
@@ -2725,7 +2725,7 @@ snapshots:
     transitivePeerDependencies:
       - '@types/node'
 
-  '@sierragridteam/sdk@0.10.0':
+  '@sierragridteam/sdk@0.11.0':
     dependencies:
       zod: 4.6.7
 

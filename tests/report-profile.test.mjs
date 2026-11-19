@@ -309,6 +309,34 @@ test("burn status: 'Unchanged for' is exact only when the change is loaded; CAL 
   assert.equal(stat(reportProfile(burnEvent("BURN_PERMISSION_PROHIBITED", "CALFIRE_BURNING_SUSPENDED"), [], at), "CAL FIRE").sub, "All SRA · since Nov 6");
 });
 
+test("a monitored road under chains: its own figure beside the status, and on the timeline when it starts, changes and lifts", () => {
+  const at = T("2026-11-22T22:00:00Z");
+  const under = (status, ...levels) => { const e = roadEvent(status); return { ...e, roadSegment: { ...e.roadSegment, chains: levels.map((level) => ({ level, eventId: `cc:hwy4:${level.toLowerCase()}` })) } }; };
+  const history = [revOf(1, "2026-11-20T08:00:00Z", under("OPEN")), revOf(2, "2026-11-21T16:53:00Z", under("OPEN", "R1")), revOf(3, "2026-11-21T20:00:00Z", under("OPEN", "R2", "R1"))];
+  const p = reportProfile({ ...under("OPEN", "R2", "R1"), revision: 3 }, history, at);
+  assert.equal(stat(p, "Road").value, "Open", "chains do not change the status");
+  assert.deepEqual([stat(p, "Chains").value, stat(p, "Chains").sub], ["R2 required", "for 26 h, since Nov 21"]);
+  assert.ok(lines(p).some((l) => /Chains: R1 required \(was None/.test(l)), lines(p).join(" | "));
+  assert.ok(lines(p).some((l) => /Chains: R2 required \(was R1 required/.test(l)), lines(p).join(" | "));
+  // Lifted: on the timeline, and no figure for a requirement that is not there.
+  const lifted = reportProfile({ ...under("OPEN"), revision: 4 }, [...history, revOf(4, "2026-11-22T20:00:00Z", under("OPEN"))], at);
+  assert.equal(stat(lifted, "Chains"), undefined);
+  assert.ok(lines(lifted).some((l) => /Chains: None \(was R2 required/.test(l)), lines(lifted).join(" | "));
+  // Truncated history: how long is a lower bound.
+  const cut = reportProfile({ ...under("OPEN", "R2"), revision: 9 }, [revOf(9, "2026-11-22T10:00:00Z", under("OPEN", "R2"))], at, { complete: false });
+  assert.equal(stat(cut, "Chains").sub, "for at least 12 h · earlier history not loaded");
+  // Chains went on the record on 2026-11-19 22:00Z. A revision from before lists none whatever the road was under:
+  // the first one after it is not "was None", and the figure says "at least", since recording began.
+  const before = revOf(11, "2026-11-19T21:39:48Z", under("OPEN")), first = revOf(12, "2026-11-19T22:02:26Z", under("OPEN", "R2"));
+  const deployed = reportProfile({ ...under("OPEN", "R2"), revision: 12 }, [before, first], T("2026-11-20T03:02:26Z"));
+  assert.deepEqual([stat(deployed, "Chains").value, stat(deployed, "Chains").sub], ["R2 required", "for at least 5 h · on record since Nov 19"]);
+  assert.ok(!lines(deployed).some((l) => /Chains/.test(l)), lines(deployed).join(" | "));
+  const later = reportProfile({ ...under("OPEN"), revision: 13 }, [before, first, revOf(13, "2026-11-20T18:00:00Z", under("OPEN"))], T("2026-11-20T19:00:00Z"));
+  assert.ok(lines(later).some((l) => /Chains: None \(was R2 required/.test(l)), lines(later).join(" | "));
+  // A road with no chains on record has no such figure.
+  assert.equal(stat(reportProfile({ ...roadEvent("OPEN"), revision: 1 }, [history[0]], at), "Chains"), undefined);
+});
+
 test("a monitored road that is not open says what set its status, and a change of cause is on its timeline", () => {
   const at = T("2026-11-19T03:00:00Z");
   const withCauses = (status, causes) => { const e = roadEvent(status); return { ...e, roadSegment: { ...e.roadSegment, causes } }; };
