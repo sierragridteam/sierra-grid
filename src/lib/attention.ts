@@ -77,3 +77,18 @@ export function attentionFor(summary: V1PlaceSummary) {
     generatedAt: summary.generatedAt,
   };
 }
+
+/**
+ * The Overview's "N are severe." It is counted from the list shown beside it
+ * (the items above), never separately, so the sentence and the list cannot
+ * disagree. They did twice in 2026-11: the sentence counted events while the
+ * list also carried closed monitored roads, then a seasonal closure that is a
+ * condition and not an event.
+ */
+export function attentionSentence(items: Pick<AttentionItem, "rank">[]): string {
+  const extreme = items.filter((i) => i.rank >= 4).length;
+  const severe = items.filter((i) => i.rank === 3).length;
+  if (extreme) return `${extreme} ${extreme === 1 ? "is" : "are"} extreme.`;
+  if (severe) return `${severe} ${severe === 1 ? "is" : "are"} severe.`;
+  return "None are rated severe or extreme.";
+}

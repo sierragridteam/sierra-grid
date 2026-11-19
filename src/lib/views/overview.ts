@@ -7,7 +7,7 @@ import { urlState } from "@sierragridteam/design-system/lib/app";
 import { param } from "@sierragridteam/design-system/lib/url-state";
 import type { Context } from "../context";
 import { data } from "../context";
-import { attentionFor } from "../attention";
+import { attentionSentence, attentionFor } from "../attention";
 import { fmt } from "../render";
 import { stateUrl, defaults } from "../state";
 import { mountRoadOverview } from "./road-map";
@@ -50,7 +50,9 @@ export async function mount(ctx: Context) {
     const count = s.events ? headlineCounts(eventsOnly(s.events), s.partial, undefined, s.events.filter(e => !isOccurrence(e))) : null;
     const attention = s.summary ? attentionFor(s.summary) : undefined;
     return summaryBanner({ kicker: "Ebbetts Pass Corridor", level: 1,
-      headline: count ? `${count.first} ${count.second}` : s.eventError ? "Current event counts are unavailable." : "Checking the latest reports across the corridor.",
+      // The severity sentence is the list's own count once the list is shown. Before the summary
+      // arrives it is left out; if the summary failed there is no list, and the events' count stands.
+      headline: count ? `${count.first}${attention ? ` ${attentionSentence(attention.items)}` : s.summaryError ? ` ${count.second}` : ""}` : s.eventError ? "Current event counts are unavailable." : "Checking the latest reports across the corridor.",
       meta: count ? `${count.active} active · ${count.scheduled} scheduled${s.partial ? " · partial count" : ""}` : "Live source reports, regional conditions and observations.",
       asideTitle: "Highest severity now",
       aside: html`<div id="attention" aria-label="Needs attention" aria-busy=${String(!attention && !s.summaryError)}>${attention ? html`
