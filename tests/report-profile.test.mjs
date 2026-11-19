@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { reportProfile, duration } from "../src/lib/report-profile.ts";
+import { reportProfile, duration, roadCauseText } from "../src/lib/report-profile.ts";
 
 const base = { id: "x", headline: "h", status: "ACTIVE", severity: "MODERATE", category: "", areaLabel: "near Jamestown", provenance: { attribution: "cwwp2.dot.ca.gov" }, ingestedAt: "2026-11-09T19:33:00Z", observedAt: "2026-11-09T19:28:00Z", revision: "1" };
 const closure = { ...base, layer: "ROAD_INCIDENT", roadIncident: { logNumber: "1", closure: {
@@ -307,4 +307,22 @@ test("burn status: 'Unchanged for' is exact only when the change is loaded; CAL 
   assert.equal(stat(reportProfile({ ...allowed, revision: 60 }, [], at, { complete: false }), "Unchanged for").value, "Not known");
   // A suspension keeps its own sub-label.
   assert.equal(stat(reportProfile(burnEvent("BURN_PERMISSION_PROHIBITED", "CALFIRE_BURNING_SUSPENDED"), [], at), "CAL FIRE").sub, "All SRA · since Nov 6");
+});
+
+test("a monitored road that is not open says what set its status, and a change of cause is on its timeline", () => {
+  const at = T("2026-11-19T03:00:00Z");
+  const withCauses = (status, causes) => { const e = roadEvent(status); return { ...e, roadSegment: { ...e.roadSegment, causes } }; };
+  const fire = { status: "CLOSED", source: "incident", eventId: "chp:261118ST0331", text: "" };
+  const snow = { status: "RESTRICTED", source: "road_condition", eventId: "", text: "Chains are required from Arnold to Bear Valley" };
+  assert.equal(roadCauseText(fire), "CHP incident 261118ST0331");
+  assert.equal(roadCauseText(snow), "Caltrans road conditions: Chains are required from Arnold to Bear Valley");
+  assert.equal(roadCauseText({ source: "lane_closure" }), "A Caltrans lane closure");
+  const history = [revOf(1, "2026-11-17T05:00:00Z", roadEvent("OPEN")), revOf(2, "2026-11-18T22:00:00Z", withCauses("RESTRICTED", [snow])), revOf(3, "2026-11-19T01:08:00Z", withCauses("CLOSED", [fire, snow]))];
+  const p = reportProfile({ ...withCauses("CLOSED", [fire, snow]), revision: 3 }, history, at);
+  assert.deepEqual(p.sections, [{ title: "Why it is closed", items: [{ label: "Closed", value: "CHP incident 261118ST0331" }, { label: "Restricted", value: "Caltrans road conditions: Chains are required from Arnold to Bear Valley" }] }]);
+  assert.ok(lines(p).some((l) => /CHP incident 261118ST0331/.test(l)), lines(p).join(" | "));
+  // An open road, or an API that sends no causes, has no such section and no "Because" entry.
+  const open = reportProfile({ ...roadEvent("OPEN"), revision: 1 }, [history[0]], at);
+  assert.deepEqual(open.sections, []);
+  assert.ok(!lines(open).some((l) => /Because/.test(l)));
 });
