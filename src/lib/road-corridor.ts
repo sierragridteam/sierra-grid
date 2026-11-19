@@ -85,28 +85,65 @@ export function routeChains(segments: Segment[]): Chain[] {
 }
 
 /**
+ * The straight pieces of a chain's line with where each starts along it (km).
+ * Positions are worked out in a local flat projection, fine at corridor
+ * scale, and each section's pieces are scaled to fill the section exactly, so
+ * the end of a section's line is the section's end on the strip. `alongRoute`
+ * and `routeSlice` both walk these: a place found by one is the same place to
+ * the other.
+ */
+function* pieces(chain: Chain) {
+  for (const [section, { from, to, segment }] of chain.sections.entries()) {
+    const line = segment.coordinates;
+    const flat = line.slice(1).map((b, i) => {
+      const a = line[i], kx = 111.32 * Math.cos((a[1] * Math.PI) / 180), ky = 110.57;
+      return { a, b, kx, ky, bx: (b[0] - a[0]) * kx, by: (b[1] - a[1]) * ky };
+    });
+    const total = flat.reduce((sum, p) => sum + Math.hypot(p.bx, p.by), 0);
+    const scale = total ? (to - from) / total : 1;
+    let start = from;
+    for (const [i, p] of flat.entries()) {
+      // The last piece ends on the section's end exactly, not a rounding error short of it.
+      const end = i === flat.length - 1 ? to : start + Math.hypot(p.bx, p.by) * scale;
+      yield { section, ...p, start, end, len: end - start };
+      start = end;
+    }
+  }
+}
+
+/**
  * Where a point falls along a chain: distance from the start (km) and how far
- * off the line it is. Uses a local flat projection, fine at corridor scale.
+ * off the line it is.
  */
 export function alongRoute(chain: Chain, point: Position) {
   let best = { at: 0, off: Infinity };
-  for (const { from, segment } of chain.sections) {
-    let walked = from;
-    const line = segment.coordinates;
-    for (let i = 1; i < line.length; i++) {
-      const a = line[i - 1], b = line[i];
-      const kx = 111.32 * Math.cos((a[1] * Math.PI) / 180), ky = 110.57;
-      const ax = 0, ay = 0, bx = (b[0] - a[0]) * kx, by = (b[1] - a[1]) * ky;
-      const px = (point[0] - a[0]) * kx, py = (point[1] - a[1]) * ky;
-      const len2 = bx * bx + by * by;
-      const t = len2 ? Math.max(0, Math.min(1, (px * bx + py * by) / len2)) : 0;
-      const off = Math.hypot(px - (ax + t * bx), py - (ay + t * by));
-      const piece = Math.sqrt(len2);
-      if (off < best.off) best = { at: walked + t * piece, off };
-      walked += piece;
-    }
+  for (const { a, kx, ky, bx, by, start, end, len } of pieces(chain)) {
+    const px = (point[0] - a[0]) * kx, py = (point[1] - a[1]) * ky;
+    const len2 = bx * bx + by * by;
+    const t = len2 ? Math.max(0, Math.min(1, (px * bx + py * by) / len2)) : 0;
+    const off = Math.hypot(px - t * bx, py - t * by);
+    if (off < best.off) best = { at: t === 1 ? end : start + t * len, off };
   }
   return best;
+}
+
+/**
+ * The route's own line between two distances along it (km, as `alongRoute`
+ * gives them): one line per section crossed, cut where the distances fall
+ * inside a piece. It is the monitored geometry and nothing else: a section
+ * without a line contributes nothing, and no line joins two sections.
+ */
+export function routeSlice(chain: Chain, from: number, to: number): Position[][] {
+  const lines = new Map<number, Position[]>();
+  for (const { section, a, b, start, end, len } of pieces(chain)) {
+    const lo = Math.max(from, start), hi = Math.min(to, end);
+    if (len <= 0 || hi <= lo) continue;
+    const at = (d: number): Position => { const t = (d - start) / len; return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; };
+    const line = lines.get(section) ?? [at(lo)];
+    line.push(at(hi));
+    lines.set(section, line);
+  }
+  return [...lines.values()];
 }
 
 /**
@@ -239,19 +276,30 @@ export function chainExtent(control: ChainControl) {
   return { from, to, single: from === to, text: from === to ? `at ${from}` : `from ${from} to ${to}` };
 }
 
+/** A checkpoint off the route counts as past one of its ends when the nearest point of the route is this close to that end (km). */
+const END_KM = 0.5;
 /**
  * Chain control on a monitored route: the source's stretches that touch it,
  * in order along it. A stretch belongs to the route when any of its signs is
  * near the route, not only its low end, so one that begins before the
  * monitored sections still counts. Restrictions without a level (truck or
  * hold) are not chain requirements and are left out.
+ *
+ * Each stretch has its extent on the route (`from` to `to`, km): from its
+ * first to its last checkpoint there, clamped to the route. A checkpoint that
+ * lies past an end of the route means the stretch runs on through that end,
+ * so the extent reaches it.
  */
 export function chainStretch(c: Chain, controls: ChainControl[], nearKm = 8) {
+  const clamp = (at: number) => Math.max(0, Math.min(c.length, at));
   const stretches = controls.filter((x) => x.level && shortRoute(x.highway) === c.route).flatMap((control) => {
     const checkpoints = chainCheckpoints(control).flatMap((p) => (p.coordinates ? [{ ...p, ...alongRoute(c, p.coordinates) }] : []));
     const on = checkpoints.filter((p) => p.off <= nearKm).sort((a, b) => a.at - b.at);
     if (!on.length) return [];
-    return [{ control, level: control.level, extent: chainExtent(control), at: on[0].at, checkpoints: on, since: control.since, inferred: !!control.inferred }];
+    const past = checkpoints.filter((p) => p.off > nearKm);
+    const from = past.some((p) => p.at <= END_KM) ? 0 : clamp(on[0].at);
+    const to = past.some((p) => p.at >= c.length - END_KM) ? c.length : clamp(on.at(-1)!.at);
+    return [{ control, level: control.level, extent: chainExtent(control), at: on[0].at, from, to, checkpoints: on, since: control.since, inferred: !!control.inferred }];
   }).sort((a, b) => a.at - b.at);
   if (!stretches.length) return undefined;
   const levels = [...new Set(stretches.map((x) => x.level))].sort();
@@ -262,6 +310,67 @@ export function chainStretch(c: Chain, controls: ChainControl[], nearKm = 8) {
     where: `${c.route} ${listOf(parts)}`,
     text: `Chains required on ${c.route} ${listOf(parts)}`,
   };
+}
+export type RouteChains = NonNullable<ReturnType<typeof chainStretch>>;
+
+/**
+ * How far the chain-control layer can be trusted: read now, held from the
+ * last good read (the request failed, or the source says it is behind), or
+ * not known at all. Only `current` supports saying there are no chains.
+ */
+export type ChainRead = "current" | "last-known" | "unknown";
+export const chainRead = (r: { failed: boolean; stale: boolean; held: number }): ChainRead =>
+  r.failed ? (r.held ? "last-known" : "unknown") : r.stale ? "last-known" : "current";
+
+/** A stretch counts as on a section when this much of it lies there (km): a checkpoint that sits at a joint does not mark the section before it. */
+const TOUCH_KM = 0.1;
+/**
+ * The stretches under chain control as extents to draw along a route's
+ * strip. A requirement at a single checkpoint has no length and gives none:
+ * it stays a marker. The label carries the level, and says so when the layer
+ * is not current.
+ */
+export function chainBands(route: RouteChains | undefined, read: ChainRead = "current") {
+  return (route?.stretches ?? []).filter((x) => x.to - x.from > TOUCH_KM).map((x) => ({
+    id: x.control.id, from: x.from, to: x.to, level: x.level,
+    /** "Chains R2". */
+    label: `Chains ${x.level}${read === "current" ? "" : " · last read"}`,
+    /** "Mill Creek to Mount Reba Road": the source's ends, which may lie past the route's. */
+    where: x.extent.single ? x.extent.from : `${x.extent.from} to ${x.extent.to}`,
+    inferred: x.inferred,
+  }));
+}
+export type ChainBand = ReturnType<typeof chainBands>[number];
+
+/**
+ * What chain control adds to one section of a route, or nothing when no
+ * stretch touches it. The section's status is not changed: an open road
+ * under chain control is open. `label` goes in the section's short text
+ * ("chains R2"), `text` in its sentence ("chains required (R2) from Mill
+ * Creek to Mount Reba Road").
+ */
+export function sectionChains(c: Chain, index: number, route: RouteChains | undefined) {
+  const section = c.sections[index];
+  if (!section || !route) return undefined;
+  const last = index === c.sections.length - 1;
+  const touching = route.stretches.filter((x) => (x.to - x.from > TOUCH_KM
+    ? Math.min(x.to, section.to) - Math.max(x.from, section.from) > TOUCH_KM
+    // A single checkpoint is on the section it stands in; one at a joint is on the section it begins.
+    : x.from >= section.from && (x.from < section.to || (last && x.from <= section.to))));
+  if (!touching.length) return undefined;
+  const levels = [...new Set(touching.map((x) => x.level))].sort();
+  return { levels, label: `chains ${levels.join(", ")}`, text: `chains required ${listOf(touching.map((x) => `(${x.level}) ${x.extent.text}`))}` };
+}
+
+/**
+ * Chain control in a route's one-line summary: the stretches on it, or what
+ * is not known. Nothing is returned only when the layer is current and has
+ * no stretch here, which is the one case where silence means "none".
+ */
+export function routeChainNote(route: RouteChains | undefined, read: ChainRead = "current") {
+  if (read === "unknown") return "chain control unavailable";
+  if (!route) return read === "current" ? undefined : "chain control not current";
+  return `chains ${listOf(route.stretches.map((x) => `${x.level} ${x.extent.text}`))}${read === "current" ? "" : " when last read"}`;
 }
 const listOf = (items: string[]) => (items.length < 3 ? items.join(" and ") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
 

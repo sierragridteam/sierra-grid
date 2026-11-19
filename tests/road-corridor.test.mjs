@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chainStretch, chainCheckpoints, chainExtent, beyondClosures, beyondHeadline, beyondLabel, beyondText, roadsAnswer, severityRankOf, severityTone, alongRoute, closureNotice, routeChains, segmentName, signBoard, workJobs } from "../src/lib/road-corridor.ts";
+import { chainBands, chainRead, routeChainNote, routeSlice, sectionChains, chainStretch, chainCheckpoints, chainExtent, beyondClosures, beyondHeadline, beyondLabel, beyondText, roadsAnswer, severityRankOf, severityTone, alongRoute, closureNotice, routeChains, segmentName, signBoard, workJobs } from "../src/lib/road-corridor.ts";
 
 const seg = (headline, coordinates, extra = {}) => ({ id: headline, headline, status: "OPEN", coordinates, ...extra });
 
@@ -198,4 +198,132 @@ test("a stretch that begins before the monitored route still counts; a restricti
   assert.equal(s.stretches[0].inferred, true);
   const hold = { id: "h", level: "", highway: "Highway 4", place: "Tamarack", since: 5, coordinates: [-120.1, 38.35] };
   assert.equal(chainStretch(hwy4, [hold]), undefined);
+});
+
+// A route up a meridian, so distances are easy: A to B and B to C are 11.1 km each; the R2 signs stand at 5.5 km, 16.6 km and 3.3 km past C.
+const upHill = () => routeChains([seg("Hwy 4 — A to B", [[-120, 38.0], [-120, 38.1]]), seg("Hwy 4 — B to C", [[-120, 38.1], [-120, 38.2]])])[0];
+const onHill = (level = "R2", lats = [38.05, 38.15, 38.23], names = ["Low Gate", "Mid Gate", "High Gate"]) =>
+  stretch(`cc:hwy4:${level.toLowerCase()}`, "Highway 4", level, names[0], names.at(-1), lats.map((lat, i) => sign(`${level}-${i}`, names[i].toUpperCase(), "Eastbound", [-120, lat], 1000, level)));
+const near = (got, want, by = 0.15) => assert.ok(Math.abs(got - want) < by, `${got} is not within ${by} of ${want}`);
+
+test("a place at the end of a section's line is at the section's end on the strip, exactly", () => {
+  const hill = upHill();
+  assert.equal(alongRoute(hill, [-120, 38.1]).at, hill.sections[0].to, "the joint");
+  assert.equal(alongRoute(hill, [-120, 38.2]).at, hill.length, "the route's end");
+  assert.equal(alongRoute(hill, [-120, 38.3]).at, hill.length, "past the end: the end, and off the line");
+  near(alongRoute(hill, [-120, 38.3]).off, 11.06);
+  near(alongRoute(hill, [-120, 38.15]).at, hill.length * 0.75, 0.01);
+  // A real line bends: the same holds whatever the pieces add up to.
+  const [bendy] = routeChains([seg("Hwy 4 — A to B", [[-120.31, 38.21], [-120.27, 38.26], [-120.2, 38.3], [-120.13, 38.33]]), seg("Hwy 4 — B to C", [[-120.13, 38.33], [-120.07, 38.41], [-120.0, 38.4]])]);
+  assert.equal(alongRoute(bendy, [-120.13, 38.33]).at, bendy.sections[0].to);
+  assert.equal(alongRoute(bendy, [-119.9, 38.4]).at, bendy.length);
+});
+
+test("a stretch under chain control is an extent on the route: first to last checkpoint, clamped to the route", () => {
+  const hill = upHill();
+  const route = chainStretch(hill, [onHill()]);
+  const [x] = route.stretches;
+  near(x.from, 5.53); // Low Gate
+  assert.equal(x.to, hill.length, "High Gate is past C: the extent stops at the route's end");
+  const [band] = chainBands(route);
+  assert.deepEqual([band.id, band.level, band.label, band.where, band.inferred], ["cc:hwy4:r2", "R2", "Chains R2", "Low Gate to High Gate", false]);
+  assert.deepEqual([band.from, band.to], [x.from, x.to]);
+  // The level is the source's, whatever it is.
+  for (const level of ["R1", "R2", "R3"]) assert.equal(chainBands(chainStretch(hill, [onHill(level)]))[0].label, `Chains ${level}`);
+  // Nothing on the route: nothing to draw.
+  assert.deepEqual(chainBands(chainStretch(hill, [])), []);
+  assert.deepEqual(chainBands(undefined), []);
+});
+
+test("a stretch that runs on past an end of the route reaches that end, however far its next checkpoint is", () => {
+  const hill = upHill();
+  // Low end 55 km before A, high end 45 km past C: the only checkpoint on the route is in the middle, and the whole route is under control.
+  const through = chainStretch(hill, [onHill("R1", [37.5, 38.12, 38.6], ["Far Below", "Mid Gate", "Far Above"])]).stretches[0];
+  assert.deepEqual([through.from, through.to], [0, hill.length]);
+  assert.deepEqual(through.checkpoints.map((p) => p.place), ["Mid Gate"]);
+  near(through.at, 13.3); // the marker stays at the checkpoint
+  // A checkpoint far off to the side of the middle is not past an end and stretches nothing.
+  const aside = chainStretch(hill, [stretch("cc:hwy4:r2", "Highway 4", "R2", "Low Gate", "Mid Gate", [sign("a", "LOW GATE", "Eastbound", [-120, 38.05]), sign("b", "MID GATE", "Eastbound", [-120, 38.15]), sign("c", "ELSEWHERE", "Eastbound", [-120.4, 38.1])])]).stretches[0];
+  near(aside.from, 5.53);
+  near(aside.to, 16.6);
+});
+
+test("two stretches on one route are two bands, in order along it", () => {
+  const hill = upHill();
+  const route = chainStretch(hill, [onHill("R2", [38.16, 38.19], ["Mid Gate", "Top Gate"]), onHill("R1", [38.03, 38.07], ["Low Gate", "Camp"])]);
+  const bands = chainBands(route);
+  assert.deepEqual(bands.map((b) => [b.label, b.where]), [["Chains R1", "Low Gate to Camp"], ["Chains R2", "Mid Gate to Top Gate"]]);
+  assert.ok(bands[0].to < bands[1].from);
+  assert.equal(routeChainNote(route), "chains R1 from Low Gate to Camp and R2 from Mid Gate to Top Gate");
+  // Each section says only what is on it.
+  assert.deepEqual(sectionChains(hill, 0, route), { levels: ["R1"], label: "chains R1", text: "chains required (R1) from Low Gate to Camp" });
+  assert.deepEqual(sectionChains(hill, 1, route), { levels: ["R2"], label: "chains R2", text: "chains required (R2) from Mid Gate to Top Gate" });
+});
+
+test("a section says chains only when a stretch is on it, and its status is not touched", () => {
+  const hill = upHill();
+  // One stretch across both sections.
+  const across = chainStretch(hill, [onHill()]);
+  assert.equal(sectionChains(hill, 0, across).label, "chains R2");
+  assert.equal(sectionChains(hill, 1, across).text, "chains required (R2) from Low Gate to High Gate", "the source's ends, not the section's");
+  // Two levels on the same section are both named.
+  const both = chainStretch(hill, [onHill("R2", [38.16, 38.19], ["Mid Gate", "Top Gate"]), onHill("R1", [38.11, 38.14], ["B Gate", "Mid Gate"])]);
+  assert.deepEqual(sectionChains(hill, 1, both), { levels: ["R1", "R2"], label: "chains R1, R2", text: "chains required (R1) from B Gate to Mid Gate and (R2) from Mid Gate to Top Gate" });
+  assert.equal(sectionChains(hill, 0, both), undefined, "the section below stays as it is");
+  // A stretch that begins at the joint is on the section above it only.
+  const fromJoint = chainStretch(hill, [onHill("R2", [38.1, 38.18], ["B", "Top Gate"])]);
+  assert.equal(sectionChains(hill, 0, fromJoint), undefined);
+  assert.equal(sectionChains(hill, 1, fromJoint).label, "chains R2");
+  // No stretch, no words; and the sections themselves are the same objects as before.
+  assert.equal(sectionChains(hill, 0, undefined), undefined);
+  assert.ok(hill.sections.every((x) => x.segment.status === "OPEN"));
+});
+
+test("a requirement at a single checkpoint has no extent: no band, but its section and the route say it", () => {
+  const hill = upHill();
+  const one = chainStretch(hill, [stretch("cc:hwy4:r1", "Highway 4", "R1", "Mid Gate", "Mid Gate", [sign("a", "MID GATE", "Eastbound", [-120, 38.15], 1000, "R1")])]);
+  assert.deepEqual(chainBands(one), []);
+  assert.equal(sectionChains(hill, 0, one), undefined);
+  assert.equal(sectionChains(hill, 1, one).text, "chains required (R1) at Mid Gate");
+  assert.equal(routeChainNote(one), "chains R1 at Mid Gate");
+});
+
+test("the strip never says 'no chains' unless the layer is current: failed or behind is said, and held data is marked", () => {
+  assert.equal(chainRead({ failed: false, stale: false, held: 0 }), "current");
+  assert.equal(chainRead({ failed: false, stale: true, held: 3 }), "last-known");
+  assert.equal(chainRead({ failed: true, stale: false, held: 3 }), "last-known", "a failed request keeps the last good read");
+  assert.equal(chainRead({ failed: true, stale: false, held: 0 }), "unknown");
+  const hill = upHill(), route = chainStretch(hill, [onHill()]);
+  // Current: silence means none.
+  assert.equal(routeChainNote(undefined, "current"), undefined);
+  assert.equal(routeChainNote(route, "current"), "chains R2 from Low Gate to High Gate");
+  // Unknown: nothing is drawn and the route says why, never "none".
+  assert.equal(routeChainNote(undefined, "unknown"), "chain control unavailable");
+  assert.deepEqual(chainBands(undefined, "unknown"), []);
+  // Behind or held: what was last read is drawn and marked; an empty last read is not "none" either.
+  assert.equal(routeChainNote(undefined, "last-known"), "chain control not current");
+  assert.equal(routeChainNote(route, "last-known"), "chains R2 from Low Gate to High Gate when last read");
+  assert.equal(chainBands(route, "last-known")[0].label, "Chains R2 · last read");
+});
+
+test("the route's own line between two distances, for the map: cut inside a piece, one line per section, nothing invented", () => {
+  const hill = upHill();
+  const x = chainStretch(hill, [onHill("R2", [38.05, 38.15], ["Low Gate", "Mid Gate"])]).stretches[0];
+  const lines = routeSlice(hill, x.from, x.to);
+  assert.equal(lines.length, 2, "one line per section crossed");
+  near(lines[0][0][1], 38.05, 0.001);
+  assert.deepEqual(lines[0].at(-1), [-120, 38.1]);
+  assert.deepEqual(lines[1][0], [-120, 38.1]);
+  near(lines[1].at(-1)[1], 38.15, 0.001);
+  assert.ok(lines.flat().every(([lon]) => lon === -120), "every point is on the route's line");
+  // Inside one piece of a longer line: the ends are cut, the vertices between are the route's own.
+  const [bendy] = routeChains([seg("Hwy 4 — A to C", [[-120, 38.0], [-120, 38.1], [-119.9, 38.1], [-119.9, 38.2]])]);
+  const [mid] = routeSlice(bendy, 5, 25);
+  assert.deepEqual(mid.slice(1, -1), [[-120, 38.1], [-119.9, 38.1]]);
+  // Outside the route, or no length: nothing.
+  assert.deepEqual(routeSlice(hill, 40, 50), []);
+  assert.deepEqual(routeSlice(hill, 5, 5), []);
+  // A section without a line contributes nothing rather than a guess.
+  const [gap] = routeChains([seg("Hwy 4 — A to B", [], { distanceKm: 10 }), seg("Hwy 4 — B to C", [[-120, 38.1], [-120, 38.2]])]);
+  assert.equal(routeSlice(gap, 0, gap.length).length, 1);
 });
