@@ -254,7 +254,7 @@ test("two stretches on one route are two bands, in order along it", () => {
   const bands = chainBands(route);
   assert.deepEqual(bands.map((b) => [b.label, b.where]), [["Chains R1", "Low Gate to Camp"], ["Chains R2", "Mid Gate to Top Gate"]]);
   assert.ok(bands[0].to < bands[1].from);
-  assert.equal(routeChainNote(route), "chains R1 from Low Gate to Camp and R2 from Mid Gate to Top Gate");
+  assert.equal(routeChainNote(hill, route), "chains R1 from Low Gate to Camp and R2 from Mid Gate to Top Gate");
   // Each section says only what is on it.
   assert.deepEqual(sectionChains(hill, 0, route), { levels: ["R1"], label: "chains R1", text: "chains required (R1) from Low Gate to Camp" });
   assert.deepEqual(sectionChains(hill, 1, route), { levels: ["R2"], label: "chains R2", text: "chains required (R2) from Mid Gate to Top Gate" });
@@ -279,13 +279,51 @@ test("a section says chains only when a stretch is on it, and its status is not 
   assert.ok(hill.sections.every((x) => x.segment.status === "OPEN"));
 });
 
+// `road.chains` on the road_segment layer, as the API sends it since 2026-11-19: the stretches the source puts on a section.
+const listedHill = (lower, upper) => routeChains([seg("Hwy 4 — A to B", [[-120, 38.0], [-120, 38.1]], lower === undefined ? {} : { chains: lower }), seg("Hwy 4 — B to C", [[-120, 38.1], [-120, 38.2]], upper === undefined ? {} : { chains: upper })])[0];
+const listed = (level, from, to, eventId = `cc:hwy4:${level.toLowerCase()}`) => ({ level, eventId, from, to, headline: `Hwy 4 chains required, ${from} to ${to} (${level})`, since: "2026-11-18T08:53:41-08:00", inferred: false });
+
+test("which stretch is on which section is the source's to say: its list is used, and an empty list is none", () => {
+  // The stretch's low checkpoint stands 170 m below the joint: by position it reaches into A to B, and the source says it is not on it.
+  const r2 = onHill("R2", [38.0985, 38.18], ["Blue Lake", "Top Gate"]);
+  const hill = listedHill([], [listed("R2", "Blue Lake", "Top Gate")]);
+  const route = chainStretch(hill, [r2]);
+  assert.equal(sectionChains(hill, 0, route), undefined);
+  assert.deepEqual(sectionChains(hill, 1, route), { levels: ["R2"], label: "chains R2", text: "chains required (R2) from Blue Lake to Top Gate" });
+  // Without a list the same stretch is read from where it lies, and is on both.
+  const unlisted = listedHill(undefined, undefined);
+  assert.equal(sectionChains(unlisted, 0, chainStretch(unlisted, [r2])).label, "chains R2");
+  // The band is the checkpoints' all the same: it starts where the sign stands.
+  near(chainBands(route)[0].from, 11.12 - 0.17, 0.03);
+  // Two on a section are named in order along the route, whatever order the list has; one the layer does not place keeps the list's order, last.
+  const two = listedHill([], [listed("R2", "Mid Gate", "Top Gate"), listed("R1", "B Gate", "Mid Gate"), listed("R3", "Elsewhere", "Elsewhere", "cc:hwy4:r3")]);
+  const placed = chainStretch(two, [onHill("R2", [38.16, 38.19], ["Mid Gate", "Top Gate"]), onHill("R1", [38.11, 38.14], ["B Gate", "Mid Gate"])]);
+  assert.deepEqual(sectionChains(two, 1, placed), { levels: ["R1", "R2", "R3"], label: "chains R1, R2, R3", text: "chains required (R1) from B Gate to Mid Gate, (R2) from Mid Gate to Top Gate and (R3) at Elsewhere" });
+});
+
+test("when the chain-control layer could not be read, the requirements the sections list are still said", () => {
+  const hill = listedHill([], [listed("R2", "Mid Gate", "Top Gate")]);
+  // No layer, so no stretch to place and no band; the section and the route say what the road layer lists.
+  assert.equal(sectionChains(hill, 1, undefined).label, "chains R2");
+  assert.equal(routeChainNote(hill, undefined, "unknown"), "chains R2 from Mid Gate to Top Gate");
+  assert.deepEqual(chainBands(undefined, "unknown"), []);
+  // A stretch listed on two sections is named once.
+  const both = listedHill([listed("R2", "Low Gate", "Top Gate")], [listed("R2", "Low Gate", "Top Gate")]);
+  assert.equal(routeChainNote(both, undefined, "unknown"), "chains R2 from Low Gate to Top Gate");
+  // Every section says it has none: that is known, whatever happened to the layer.
+  assert.equal(routeChainNote(listedHill([], []), undefined, "unknown"), undefined);
+  // One section does not say: not known.
+  assert.equal(routeChainNote(listedHill([], undefined), undefined, "unknown"), "chain control unavailable");
+  assert.equal(routeChainNote(listedHill(undefined, null), undefined, "last-known"), "chain control not current");
+});
+
 test("a requirement at a single checkpoint has no extent: no band, but its section and the route say it", () => {
   const hill = upHill();
   const one = chainStretch(hill, [stretch("cc:hwy4:r1", "Highway 4", "R1", "Mid Gate", "Mid Gate", [sign("a", "MID GATE", "Eastbound", [-120, 38.15], 1000, "R1")])]);
   assert.deepEqual(chainBands(one), []);
   assert.equal(sectionChains(hill, 0, one), undefined);
   assert.equal(sectionChains(hill, 1, one).text, "chains required (R1) at Mid Gate");
-  assert.equal(routeChainNote(one), "chains R1 at Mid Gate");
+  assert.equal(routeChainNote(hill, one), "chains R1 at Mid Gate");
 });
 
 test("the strip never says 'no chains' unless the layer is current: failed or behind is said, and held data is marked", () => {
@@ -295,14 +333,14 @@ test("the strip never says 'no chains' unless the layer is current: failed or be
   assert.equal(chainRead({ failed: true, stale: false, held: 0 }), "unknown");
   const hill = upHill(), route = chainStretch(hill, [onHill()]);
   // Current: silence means none.
-  assert.equal(routeChainNote(undefined, "current"), undefined);
-  assert.equal(routeChainNote(route, "current"), "chains R2 from Low Gate to High Gate");
+  assert.equal(routeChainNote(hill, undefined, "current"), undefined);
+  assert.equal(routeChainNote(hill, route, "current"), "chains R2 from Low Gate to High Gate");
   // Unknown: nothing is drawn and the route says why, never "none".
-  assert.equal(routeChainNote(undefined, "unknown"), "chain control unavailable");
+  assert.equal(routeChainNote(hill, undefined, "unknown"), "chain control unavailable");
   assert.deepEqual(chainBands(undefined, "unknown"), []);
   // Behind or held: what was last read is drawn and marked; an empty last read is not "none" either.
-  assert.equal(routeChainNote(undefined, "last-known"), "chain control not current");
-  assert.equal(routeChainNote(route, "last-known"), "chains R2 from Low Gate to High Gate when last read");
+  assert.equal(routeChainNote(hill, undefined, "last-known"), "chain control not current");
+  assert.equal(routeChainNote(hill, route, "last-known"), "chains R2 from Low Gate to High Gate when last read");
   assert.equal(chainBands(route, "last-known")[0].label, "Chains R2 · last read");
 });
 

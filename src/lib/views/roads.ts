@@ -317,7 +317,7 @@ function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) =
   }
   // One marker per stretch, where it begins on the way up; its card lists the checkpoints on this route.
   const chained = chainStretch(c, s.chains, CLOSURE_NEAR_KM);
-  const chainNote = routeChainNote(chained, s.chainRead);
+  const chainNote = routeChainNote(c, chained, s.chainRead);
   for (const x of chained?.stretches ?? []) markers.push({ at: inside(x.at), kind: "chain", label: `${x.level} chain control ${x.extent.text}`,
     detail: [x.checkpoints.map((p) => `${p.place}${p.directions ? ` (${p.directions.toLowerCase()})` : ""}${Number.isFinite(p.since) ? ` since ${fmt(p.since)}` : ""}`).join(" · "), x.inferred ? INFERRED_NOTE : ""].filter(Boolean).join(" — ") });
   const now = s.now;
@@ -353,7 +353,8 @@ function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) =
   const status = closed ? `Closed${notice?.from ? ` past ${notice.from}` : ""}${notice?.reason ? ` · ${notice.reason}` : ""}` : allOpen ? `Open · ${minutes(c.sections.reduce((n, x) => n + (x.segment.durationMinutes ?? 0), 0))} end to end` : undefined;
   // Chains are said beside the status, never in place of it: the road is as open as the source says. The swatch is the band's colour.
   const chainText = chainNote && !status ? `${chainNote[0].toUpperCase()}${chainNote.slice(1)}` : chainNote;
-  const parts = [status, chainText ? html`<span class="roads-chain-note">${chained ? html`<span class="roads-key roads-key--band" aria-hidden="true"></span>` : nothing}${chainText}</span>` : undefined, beyond && allOpen ? beyondText(beyond) : undefined].filter((x) => x !== undefined);
+  const bands = chainBands(chained, s.chainRead);
+  const parts = [status, chainText ? html`<span class="roads-chain-note">${bands.length ? html`<span class="roads-key roads-key--band" aria-hidden="true"></span>` : nothing}${chainText}</span>` : undefined, beyond && allOpen ? beyondText(beyond) : undefined].filter((x) => x !== undefined);
   const sections = c.sections.map(({ from, to, segment }, i) => {
     const tone = segmentTone(segment), n = closureNotice(segment.description);
     const chains = sectionChains(c, i, chained);
@@ -374,7 +375,7 @@ function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) =
     stops: beyond ? [...c.stops, { at: c.length + stub, label: beyond.toward ?? "Closed" }] : c.stops,
     sections: beyond ? [...sections, { from: c.length, to: c.length + stub, tone: beyond.tone as StateTone, partial: true, label: beyondLabel(beyond), detail: `${beyond.name}. ${beyond.description ?? ""} Not to scale.`.trim() }] : sections,
     markers,
-    bands: chainBands(chained, s.chainRead),
+    bands,
   };
 }
 

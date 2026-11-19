@@ -6,7 +6,8 @@ import { fromApi } from "./api-origin";
  * Chain control on the Roads page. The routes are the API's own (their lines
  * are needed to place anything), with every section set open so the test
  * reads the same in any weather; the chain-control layer is the API's answer
- * with its requirements replaced by the one under test.
+ * with its requirements replaced by the ones under test, and each road lists
+ * the same requirements.
  */
 const sign = (id: string, place: string, direction: string, coordinates: [number, number], level: string) =>
   ({ id, place, direction, level, since: "2026-11-18T08:54:36-08:00", coordinates, source: "cwwp2.dot.ca.gov", county: "Calaveras", postmile: "0.00" });
@@ -36,9 +37,20 @@ const answer = (change: (body: any) => any) => async (route: Route) => {
   }
 };
 
-async function roads(page: Page, chains: "fail" | ReturnType<typeof requirement>[]) {
+/** `chains` is the chain-control layer ("fail": the request fails); `listed` is what the roads themselves list (default: the same; "unknown": nothing). */
+async function roads(page: Page, chains: "fail" | ReturnType<typeof requirement>[], listed: "unknown" | ReturnType<typeof requirement>[] = chains === "fail" ? "unknown" : chains) {
   await page.route((url) => url.pathname.endsWith("/map/road_segment.geojson"), answer((body) => {
-    for (const f of body.features) { f.properties.status = "OPEN"; if (f.properties.road) Object.assign(f.properties.road, { delayMinutes: 0, congestion: "CLEAR" }); }
+    for (const f of body.features) {
+      f.properties.status = "OPEN";
+      if (!f.properties.road) continue;
+      Object.assign(f.properties.road, { delayMinutes: 0, congestion: "CLEAR" });
+      // What the API lists on each road: the requirements under test on Arnold to Bear Valley, none elsewhere; nothing at all when chain control cannot be read.
+      if (listed === "unknown") delete f.properties.road.chains;
+      else f.properties.road.chains = f.properties.id !== "road:hwy4-arnold-bearvalley" ? [] : listed.map((x) => {
+        const k = x.properties.chainControl;
+        return { level: k.level, eventId: x.properties.id, headline: x.properties.headline, from: k.from.place, to: k.to.place, since: x.properties.effective, inferred: false };
+      });
+    }
     return body;
   }));
   await page.route((url) => url.pathname.endsWith("/map/chain_control.geojson"), chains === "fail" ? (route) => route.abort()
@@ -126,4 +138,16 @@ test("when the chain-control layer cannot be read, no band is drawn and nothing 
   const features = await page.locator("#roads-map sierra-geo-map").evaluate((el: any) => el.data.features.map((f: any) => f.properties.kind));
   expect(features).not.toContain("chain-stretch");
   expect((await page.locator("#roads-page").innerText()).toLowerCase()).not.toMatch(/no chain|chains? none|none on monitored/);
+});
+
+test("the layer cannot be read but the road lists its requirement: the section and the route say it, and no band is drawn", async ({ page }) => {
+  await roads(page, "fail", [requirement("R2", 0, 4)]);
+  const route = hwy4(page);
+  await expect(route.locator(".ds-corridor__label", { hasText: "chains" })).toHaveText(/^Open · chains R2 · \d+ min$/);
+  await expect(route.locator(".ds-corridor__summary")).toContainText("chains R2 from Mill Creek to Tamarack");
+  await expect(route.locator(".ds-corridor__summary")).not.toContainText("unavailable");
+  await expect(page.locator(".roads-chain-band")).toHaveCount(0);
+  await expect(route.locator(".roads-key--band")).toHaveCount(0); // no band, so no key for one
+  // A road that lists none says nothing, and is not called unknown.
+  await expect(page.locator(".roads-route").filter({ hasText: "Hwy 49" }).locator(".ds-corridor__summary")).not.toContainText(/chain/i);
 });

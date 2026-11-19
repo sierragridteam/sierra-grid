@@ -17,7 +17,15 @@ export type Segment = {
   severity?: string | null; severityRank?: number | null;
   /** Named closures in effect past one of the section's ends; they do not change `status`. */
   beyond?: Beyond[] | null;
+  /**
+   * The chain requirements the source lists on this section; they do not
+   * change `status`. An empty list is the source saying there are none; an
+   * absent one is the source not knowing (or an API that does not say).
+   */
+  chains?: RoadChain[] | null;
 };
+/** One chain requirement on a section, as the API sends it: the whole stretch, whose ends can lie past the section's. */
+export type RoadChain = { level: string; eventId?: string; from?: string; to?: string; headline?: string; since?: string | null; inferred?: boolean | null };
 /**
  * A closure past a section's end, as the API sends it. `seasonal` is the
  * source's statement that it is a standing condition (absent means it is
@@ -344,33 +352,54 @@ export type ChainBand = ReturnType<typeof chainBands>[number];
 
 /**
  * What chain control adds to one section of a route, or nothing when no
- * stretch touches it. The section's status is not changed: an open road
- * under chain control is open. `label` goes in the section's short text
- * ("chains R2"), `text` in its sentence ("chains required (R2) from Mill
- * Creek to Mount Reba Road").
+ * stretch is on it. The section's status is not changed: an open road under
+ * chain control is open. `label` goes in the section's short text ("chains
+ * R2"), `text` in its sentence ("chains required (R2) from Mill Creek to
+ * Mount Reba Road").
+ *
+ * Which stretch is on which section is the source's to say: the section's
+ * own `chains` list is used when it has one, and an empty list is none even
+ * when a checkpoint stands a little way into the section. Only when the
+ * source does not say is it read from where the stretches lie on the route.
  */
 export function sectionChains(c: Chain, index: number, route: RouteChains | undefined) {
   const section = c.sections[index];
-  if (!section || !route) return undefined;
-  const last = index === c.sections.length - 1;
-  const touching = route.stretches.filter((x) => (x.to - x.from > TOUCH_KM
+  if (!section) return undefined;
+  const listed = section.segment.chains;
+  const on = Array.isArray(listed) ? listedChains(listed, route) : stretchesOn(c, index, route).map((x) => ({ level: x.level, extent: x.extent.text }));
+  if (!on.length) return undefined;
+  const levels = [...new Set(on.map((x) => x.level))].sort();
+  return { levels, label: `chains ${levels.join(", ")}`, text: `chains required ${listOf(on.map((x) => `(${x.level}) ${x.extent}`))}` };
+}
+/** The source's list for a section, in order along the route where the stretches are placed on it. */
+function listedChains(listed: RoadChain[], route: RouteChains | undefined) {
+  const at = (x: RoadChain) => route?.stretches.find((s) => s.control.id === x.eventId)?.at ?? Infinity;
+  const extent = (x: RoadChain) => { const from = x.from || x.to, to = x.to || x.from; return !from ? "here" : from === to ? `at ${from}` : `from ${from} to ${to}`; };
+  return listed.filter((x) => x.level).map((x, i) => ({ x, i, at: at(x) })).sort((a, b) => a.at - b.at || a.i - b.i)
+    .map(({ x }) => ({ level: x.level, id: x.eventId, extent: extent(x) }));
+}
+/** The stretches lying on a section, from their extents on the route. */
+function stretchesOn(c: Chain, index: number, route: RouteChains | undefined) {
+  const section = c.sections[index], last = index === c.sections.length - 1;
+  return (route?.stretches ?? []).filter((x) => (x.to - x.from > TOUCH_KM
     ? Math.min(x.to, section.to) - Math.max(x.from, section.from) > TOUCH_KM
     // A single checkpoint is on the section it stands in; one at a joint is on the section it begins.
     : x.from >= section.from && (x.from < section.to || (last && x.from <= section.to))));
-  if (!touching.length) return undefined;
-  const levels = [...new Set(touching.map((x) => x.level))].sort();
-  return { levels, label: `chains ${levels.join(", ")}`, text: `chains required ${listOf(touching.map((x) => `(${x.level}) ${x.extent.text}`))}` };
 }
 
 /**
  * Chain control in a route's one-line summary: the stretches on it, or what
- * is not known. Nothing is returned only when the layer is current and has
- * no stretch here, which is the one case where silence means "none".
+ * is not known. The stretches come from the chain-control layer; when that
+ * could not be read, the requirements the sections themselves list are named
+ * instead. Nothing is returned only when there is no stretch and that is
+ * known: the layer is current, or every section says it has none.
  */
-export function routeChainNote(route: RouteChains | undefined, read: ChainRead = "current") {
-  if (read === "unknown") return "chain control unavailable";
-  if (!route) return read === "current" ? undefined : "chain control not current";
-  return `chains ${listOf(route.stretches.map((x) => `${x.level} ${x.extent.text}`))}${read === "current" ? "" : " when last read"}`;
+export function routeChainNote(c: Chain, route: RouteChains | undefined, read: ChainRead = "current") {
+  if (route) return `chains ${listOf(route.stretches.map((x) => `${x.level} ${x.extent.text}`))}${read === "current" ? "" : " when last read"}`;
+  const listed = new Map(c.sections.flatMap((x) => (Array.isArray(x.segment.chains) ? listedChains(x.segment.chains, undefined) : [])).map((x) => [x.id ?? `${x.level} ${x.extent}`, x]));
+  if (listed.size) return `chains ${listOf([...listed.values()].map((x) => `${x.level} ${x.extent}`))}`;
+  if (read === "current" || c.sections.every((x) => Array.isArray(x.segment.chains))) return undefined;
+  return read === "unknown" ? "chain control unavailable" : "chain control not current";
 }
 const listOf = (items: string[]) => (items.length < 3 ? items.join(" and ") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
 

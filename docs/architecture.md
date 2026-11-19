@@ -192,6 +192,11 @@ so its MapLibre worker import is transformed normally.
   route's own geometry between the first and last checkpoint on it
   (`routeSlice`); nothing is drawn where there is no monitored line. A stretch
   whose next checkpoint lies past an end of the route runs to that end.
+- Which stretch is on which section is the API's to say (`road.chains` on the
+  road layer: a list, an empty list for none, absent for not known). A
+  section's words come from that list; only when it is absent are they read
+  from where the checkpoints lie. The band's extent is always the
+  checkpoints': the API gives no distances along a road.
 - The band beside a route's strip is Grid's composition on the strip's scale;
   the design system's `corridor()` has no band of its own. Where the strip
   turns vertical (narrow screens) there is no shared axis, so no band is
