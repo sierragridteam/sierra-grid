@@ -24,7 +24,40 @@
 .roads-key { display: inline-block; flex: none; background: var(--key); }
 .roads-key--line { width: 1.25rem; height: 4px; border-radius: 2px; }
 .roads-key--dot, .roads-dot { width: 0.65rem; height: 0.65rem; border-radius: 50%; }
-.roads-dot { display: inline-block; flex: none; background: var(--key); }
+/* Measures a section's text in the strip's type (the corridor's own label size), to choose one that fits. Never seen. */
+.roads-label-probe { position: absolute; visibility: hidden; pointer-events: none; white-space: nowrap; font-size: var(--fs-small); font-variant-numeric: tabular-nums; }
+/* A route's line with the chain-control casing around it, as the map draws it. */
+.roads-key--chains { width: 1.25rem; height: 4px; margin: 3px; border-radius: 2px; background: var(--state-ok); box-shadow: 0 0 0 3px color-mix(in oklab, var(--chart-glacier) 55%, transparent); }
+/* Chain control on a route. In its summary: the words, keyed with the band's colour. */
+.roads-chain-note { font-weight: var(--fw-semibold); }
+.roads-key--band { width: 1rem; height: 6px; margin-right: var(--space-1); border-radius: 3px; background: var(--chart-glacier); vertical-align: 0.1em; }
+/*
+ * Beside its strip, on the strip's own scale (`--from`/`--to` are percentages of the length the strip is drawn to): a band
+ * from the first to the last checkpoint, its level under it. Only where the strip is horizontal: below about 34rem the
+ * design system's corridor runs down the page and there is no shared axis to draw on, so the summary and the section's
+ * label carry it alone.
+ */
+.roads-route { container-type: inline-size; display: grid; gap: var(--space-1); min-width: 0; }
+.roads-chain-lane { display: none; margin: 0; padding: 0; list-style: none; font-size: var(--fs-small); color: var(--ink-body); }
+.roads-chain-band__bar { display: block; height: 6px; border-radius: 3px; background: var(--chart-glacier); }
+.roads-chain-band.is-inferred .roads-chain-band__bar { background: repeating-linear-gradient(90deg, var(--chart-glacier) 0 6px, color-mix(in oklab, var(--chart-glacier) 35%, transparent) 6px 10px); }
+.roads-chain-band__label { font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
+@container (width > 34rem) {
+  .roads-chain-lane { --label: 1.2rem; display: block; position: relative; height: calc(6px + 2px + var(--label)); margin-inline: 2px; }
+  /* A little air at each end, so two stretches that meet read as two. */
+  .roads-chain-band { position: absolute; top: 0; left: var(--from); width: calc(var(--to) - var(--from)); padding-inline: 2px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; justify-items: center; }
+  .roads-chain-band__bar { width: 100%; }
+  /* A label wider than its band spills evenly, or inward from the strip's ends. */
+  .roads-chain-band__label { width: max-content; height: var(--label); line-height: var(--label); }
+  .roads-chain-band--start { justify-items: start; }
+  .roads-chain-band--end { justify-items: end; }
+  /* Two stretches side by side: every other label goes above its band, so short neighbours do not collide. */
+  .roads-chain-lane--several { height: calc(6px + 4px + 2 * var(--label)); }
+  .roads-chain-lane--several .roads-chain-band { top: calc(var(--label) + 2px); }
+  .roads-chain-lane--several .roads-chain-band:nth-child(even) { top: 0; }
+  .roads-chain-lane--several .roads-chain-band:nth-child(even) .roads-chain-band__bar { order: 1; }
+}
+@media (forced-colors: active) { .roads-chain-band__bar, .roads-key--chains, .roads-key--band { forced-color-adjust: none; } }
 .roads-schedule { --span: 8; }
 .roads-reports { --span: 4; }
 .roads-signs { --span: 12; }

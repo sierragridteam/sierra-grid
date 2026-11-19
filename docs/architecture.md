@@ -184,7 +184,39 @@ so its MapLibre worker import is transformed normally.
   the pages keep them apart. A missing observation is not a clear condition.
 - "This season" on Wildfires and Power is what Grid has on record, not a census.
 - CAL FIRE incidents and FIRIS perimeters of one fire are joined by name.
-- Chain control is shown as a stretch between Caltrans's checkpoints.
+- Chain control is shown as a stretch between Caltrans's checkpoints, and it
+  never changes a road's status: an open section under chain control is open,
+  in the open colour, with the requirement said beside it (the route's
+  summary, the section's label, and a band beside the strip). On the map the
+  stretch is a glacier casing under the route's line, cut from the monitored
+  route's own geometry between the first and last checkpoint on it
+  (`routeSlice`); nothing is drawn where there is no monitored line. A stretch
+  whose next checkpoint lies past an end of the route runs to that end.
+- Which stretch is on which section is the API's to say (`road.chains` on the
+  road layer: a list, an empty list for none, absent for not known). A
+  section's words come from that list; only when it is absent are they read
+  from where the checkpoints lie. The band's extent is always the
+  checkpoints': the API gives no distances along a road.
+- A requirement a road lists that the chain-control layer gives no stretch
+  for (the layer could not be read, or the two were read minutes apart) is
+  still the page's answer: the title (in the API's headline for the
+  stretch), the "Chain controls" figure, the section and the route's summary
+  all say it (`chainsOnRoute`, `chainFigure`), and no band or casing is
+  drawn, there being no checkpoints to place.
+- A section's text is chosen to fit (`sectionLabels`, `fitLabel`,
+  `labelRoom`): the strips' width is measured, and where a text with chains
+  in it does not fit, the minutes go, then the status word, so the level is
+  not what the component's ellipsis cuts. Across the page the room is the
+  section's share of the strip; for the vertical strip it is an estimate of
+  the corridor's label column.
+- The band beside a route's strip is Grid's composition on the strip's scale;
+  the design system's `corridor()` has no band of its own. Where the strip
+  turns vertical (narrow screens) there is no shared axis, so no band is
+  drawn there: the summary and the section's label carry the requirement.
+- "No chains" is said only of a chain-control layer that was read and is
+  current (`chainRead`). When the request failed or the source is behind, the
+  strip draws what was last read and marks it, or draws nothing and says
+  chain control is unavailable.
 - Which gateway reached which mesh repeater is not published by the API.
 - Camera coverage is supplemental; there is no Highway 4 camera in the catalogue.
 

@@ -11,8 +11,8 @@ import { stateUrl } from "../state";
 import { regionTimeZone } from "../time";
 import { ageText } from "../mesh-fleet";
 import {
-  alongRoute, beyondClosures, beyondLabel, beyondText, chainCheckpoints, chainExtent, chainStretch, closureNotice, roadsAnswer, routeChains, segmentName, severityRankOf, severityTone, signBoard, workJobs, workName,
-  type Chain, type ChainControl, type Position, type Segment, type Sign, type WorkWindow,
+  alongRoute, beyondClosures, beyondLabel, beyondText, chainBands, chainCheckpoints, chainFigure, chainExtent, chainRead, chainStretch, closureNotice, fitLabel, labelRoom, roadsAnswer, routeChainNote, routeChains, routeSlice, sectionChains, sectionLabels, segmentName, severityRankOf, severityTone, signBoard, workJobs, workName,
+  type Chain, type ChainBand, type ChainControl, type ChainRead, type Position, type Segment, type Sign, type WorkWindow,
 } from "../road-corridor";
 import { createStore, region } from "@sierragridteam/design-system/lib/region";
 import { html, nothing } from "@sierragridteam/design-system/lib/template";
@@ -41,8 +41,12 @@ type State = {
   /** What Grid has on record for the last RECORD_DAYS (from `recordFrom`): not read yet, failed (keeping the last good read) or answered. */
   record: Read<RevisionPages>; recordFrom: number;
   segments: Segment[]; closures: Closure[]; chains: ChainControl[]; signs: Sign[]; events: RoadEvent[]; cameras?: Cameras;
+  /** Whether the chain-control layer is read now, held from the last good read, or not known. */
+  chainRead: ChainRead;
   chp?: { status: string; lastSuccessAt?: string | null };
   loaded: boolean; errors: string[]; stale: string[]; updatedAt: number; now: number;
+  /** The route strips' width and the root font size (px), measured: what a section's text has room for. 0 until measured. */
+  strip: { width: number; rem: number };
 };
 
 const ms = (v?: string | null) => (v ? Date.parse(v) : NaN);
@@ -77,7 +81,7 @@ export async function mount(ctx: Context) {
   const { client, state, $, signal } = ctx;
   const recordUrl = (id: string) => stateUrl({ ...state, topic: "events", layer: "ROAD_INCIDENT", record: id, revision: "", compare: "", autoSelect: true, timeExplicit: false } as any);
   const eventsUrl = stateUrl({ ...state, topic: "events", layer: "ROAD_INCIDENT", record: "", timeExplicit: false } as any);
-  const store = createStore<State>({ segments: [], closures: [], chains: [], signs: [], events: [], loaded: false, errors: [], stale: [], updatedAt: 0, now: Date.now(), record: { state: "loading" }, recordFrom: 0 });
+  const store = createStore<State>({ segments: [], closures: [], chains: [], chainRead: "current", signs: [], events: [], loaded: false, errors: [], stale: [], updatedAt: 0, now: Date.now(), record: { state: "loading" }, recordFrom: 0, strip: { width: 0, rem: 16 } });
 
   async function load() {
     const [segments, closures, signs, events, cameras, sources] = await Promise.allSettled([
@@ -101,25 +105,28 @@ export async function mount(ctx: Context) {
       ...(value(sources)?.sources ?? []).filter((x) => ["caltrans", "chp"].includes(x.id) && x.status !== "OK").map((x) => `${x.name} (${x.status.toLowerCase()})`),
     ];
     const prev = store.get();
+    const closurePoints = cc ? cc.features.flatMap((f) => {
+      const at = pointOf(f.geometry), p = f.properties as any;
+      return at && (p.category === "closed" || p.status === "CLOSED") ? [{ id: p.id, headline: p.headline, rank: severityRankOf(p), highway: String(p.chainControl?.highway ?? "").replace(/^Highway /, "Hwy "), direction: p.chainControl?.direction, description: p.description || p.summary, coordinates: at }] : [];
+    }) : prev.closures;
+    const controls = cc ? cc.features.flatMap((f) => {
+      const at = pointOf(f.geometry), p = f.properties as any;
+      const k = p.chainControl ?? {};
+      // Everything in this layer that is not a closure point is a stretch under a chain requirement, with its signs, or a truck or hold restriction (one point, no level).
+      return at && p.category !== "closed" && p.status !== "CLOSED" ? [{
+        id: p.id, level: k.level || String(p.category ?? "").toUpperCase(), highway: k.highway ?? "", direction: k.direction, place: p.areaLabel || p.headline, since: ms(p.effective), description: p.description, coordinates: at,
+        from: k.from?.place, to: k.to?.place, inferred: k.inferred === true,
+        signs: (k.signs ?? []).map((x: any) => ({ id: x.id, place: x.place, direction: x.direction, level: x.level, since: ms(x.since), coordinates: x.coordinates })),
+      }] : [];
+    }) : prev.chains;
+    const ccStatus = cc?.metadata?.sourceStatus;
     store.set({
       segments: seg ? seg.features.filter((f) => f.geometry?.type === "LineString").map((f) => {
         const p = f.properties as any;
         return { id: p.id, headline: p.headline, status: p.status, description: p.description, severity: p.severity, severityRank: p.severityRank, coordinates: (f.geometry as any).coordinates, ...p.road };
       }) : prev.segments,
-      closures: cc ? cc.features.flatMap((f) => {
-        const at = pointOf(f.geometry), p = f.properties as any;
-        return at && (p.category === "closed" || p.status === "CLOSED") ? [{ id: p.id, headline: p.headline, rank: severityRankOf(p), highway: String(p.chainControl?.highway ?? "").replace(/^Highway /, "Hwy "), direction: p.chainControl?.direction, description: p.description || p.summary, coordinates: at }] : [];
-      }) : prev.closures,
-      chains: cc ? cc.features.flatMap((f) => {
-        const at = pointOf(f.geometry), p = f.properties as any;
-        const k = p.chainControl ?? {};
-        // Everything in this layer that is not a closure point is a stretch under a chain requirement, with its signs, or a truck or hold restriction (one point, no level).
-        return at && p.category !== "closed" && p.status !== "CLOSED" ? [{
-          id: p.id, level: k.level || String(p.category ?? "").toUpperCase(), highway: k.highway ?? "", direction: k.direction, place: p.areaLabel || p.headline, since: ms(p.effective), description: p.description, coordinates: at,
-          from: k.from?.place, to: k.to?.place, inferred: k.inferred === true,
-          signs: (k.signs ?? []).map((x: any) => ({ id: x.id, place: x.place, direction: x.direction, level: x.level, since: ms(x.since), coordinates: x.coordinates })),
-        }] : [];
-      }) : prev.chains,
+      closures: closurePoints, chains: controls,
+      chainRead: chainRead({ failed: !cc, stale: !!ccStatus && ccStatus !== "OK", held: controls.length + closurePoints.length }),
       signs: ms_ ? ms_.features.map((f) => {
         const p = f.properties as any, s = p.messageSign ?? {};
         return { id: p.id, location: p.areaLabel || p.headline, route: s.route, direction: s.direction, pages: s.pages ?? [], inService: s.inService !== false, since: ms(p.effective), coordinates: pointOf(f.geometry) };
@@ -148,8 +155,15 @@ export async function mount(ctx: Context) {
   }
   const anyRecordUrl = (id: string) => stateUrl({ ...state, topic: "events", layer: "ALL", eventStatus: "all", record: id, revision: "", compare: "", autoSelect: true, timeExplicit: false } as any);
 
-  $("content").innerHTML = `<div id="roads-page"></div>`;
+  $("content").innerHTML = `<div id="roads-page"></div><span class="roads-label-probe" aria-hidden="true"></span>`;
   let map: SierraGeoMap | undefined;
+  // How wide a section's text is, in the strip's own type: asked of a hidden element of ours, and remembered.
+  const probe = $("content").querySelector<HTMLElement>(".roads-label-probe")!;
+  const widths = new Map<string, number>();
+  const textWidth = (text: string) => {
+    if (!widths.has(text)) { probe.textContent = text; widths.set(text, probe.getBoundingClientRect().width); }
+    return widths.get(text)!;
+  };
 
   region($("roads-page"), store, (s) => {
     const chains = routeChains(s.segments);
@@ -166,11 +180,11 @@ export async function mount(ctx: Context) {
     const delay = s.segments.reduce((sum, x) => sum + (x.delayMinutes ?? 0), 0);
     const answer = roadsAnswer(chains, { segments: s.segments, controls: s.chains, activeWork: s.events.filter((e) => e.status === "ACTIVE" && e.roadIncident?.closure).length });
     // A strip can run past its route (a closed stub beyond the last stop), so the shared scale comes from the strips.
-    const strips = chains.map((c) => strip(c, s, work, recordUrl));
-    const stretches = chains.flatMap((c) => chainStretch(c, s.chains) ?? []);
-    // Requirements on highways that are not monitored routes here: named, never counted as "none".
-    const nearby = [...new Set(s.chains.filter((x) => x.level).map((x) => x.highway.replace(/^Highway /, "Hwy ")))].filter((h) => !stretches.some((x) => x.route === h));
-    const chainsUnknown = s.errors.includes("chain controls and closure points") && !s.chains.length && !s.closures.length;
+    // A strip can be shorter than the scale they share, so the texts are fitted once the scale is known.
+    const drafts = chains.map((c) => strip(c, s, work, recordUrl));
+    const scale = Math.max(...drafts.map((x) => x.length));
+    const strips = drafts.map((x) => ({ ...x, sections: x.sections.map(({ labels, ...section }) => ({ ...section, label: fitLabel(labels, labelRoom(s.strip, section, scale), textWidth) })) }));
+    const figure = chainFigure(chains, s.chains, s.chainRead);
     const reportsUnknown = s.errors.includes("road reports") && !s.events.length;
     const past = chains.flatMap((c) => beyondClosures(c).map((b) => beyondText(b)));
     return html`
@@ -179,22 +193,27 @@ export async function mount(ctx: Context) {
       ${s.stale.length ? html`<p class="callout">The source is behind for: ${s.stale.join(", ")}. Treat those parts as last known, not current.</p>` : nothing}
       <div class="stats stats--compact roads-kpis">
         ${stat({ label: "Routes open", value: s.segments.length ? `${open.length} of ${s.segments.length}` : "—", sub: closed.length ? `closure notice: ${closed.map((x) => { const n = segmentName(x.headline); return `${n.route} ${n.from}–${n.to}`; }).join(", ")}` : past.length ? past.join("; ") : "monitored sections" })}
-        ${stat({ label: "Chain controls", value: chainsUnknown ? "—" : s.segments.length || s.chains.length ? (stretches.length ? [...new Set(stretches.flatMap((x) => x.levels))].sort().join(", ") : "None") : "—",
-          sub: stretches.length ? stretches.map((x) => `${x.where}${Number.isFinite(x.since) ? ` · since ${fmt(x.since)}` : ""}`).join("; ") : chainsUnknown ? "chain control status is unavailable" : nearby.length ? `none on monitored routes · ${nearby.join(", ")} nearby` : "no chain requirements" })}
+        ${stat({ label: "Chain controls", value: figure.state === "required" ? figure.levels.join(", ") : figure.state === "unknown" || !(s.segments.length || s.chains.length) ? "—" : "None",
+          sub: figure.state === "required" ? figure.items.map((x) => `${x.where}${Number.isFinite(x.since) ? ` · since ${fmt(x.since)}` : ""}`).join("; ")
+            : figure.state === "unknown" ? "chain control status is unavailable"
+            // The road layer speaks for the monitored routes only; the chain-control layer, which covers the rest, was not read.
+            : figure.state === "none-listed" ? "none on monitored routes · other highways not known"
+            : figure.nearby.length ? `none on monitored routes · ${figure.nearby.join(", ")} nearby` : "no chain requirements" })}
         ${stat({ label: "Delay on routes", value: s.segments.length ? minutes(delay) : "—", sub: delay ? "reported across monitored sections" : "traffic is moving freely" })}
         ${stat({ label: "Work zones now", value: reportsUnknown ? "—" : String(activeWork.length), sub: reportsUnknown ? "road reports are unavailable" : activeWork.length ? `lane closures on ${[...new Set(activeWork.map((w) => /^(Hwy \d+)/.exec(w.headline)?.[1] ?? "the corridor"))].join(" and ")}` : "no lane closures in place" })}
         ${stat({ label: "Planned work · 7 days", value: String(jobs.filter((j) => j.windows.some((w) => w.status !== "ACTIVE")).length), sub: upcoming.length ? `${upcoming.length} windows · next ${fmt(Math.min(...upcoming.map((w) => w.start)))}` : "nothing scheduled" })}
         ${stat({ label: "CHP incidents", value: String(chpActive.length), href: eventsUrl, actionLabel: "Browse road reports", sub: s.chp ? `feed ${s.chp.status.toLowerCase()}${s.chp.lastSuccessAt ? ` · checked ${ageText(Math.max(0, s.now - ms(s.chp.lastSuccessAt)))} ago` : ""}` : "live traffic incidents" })}
       </div>
       ${card({ variant: "panel", title: "Routes", kicker: "Monitored sections, to scale", as: "section", class: "roads-corridors" },
-        chains.length ? html`<div class="roads-strips">${strips.map((p) => corridor({ ...p, length: Math.max(...strips.map((x) => x.length)) }))}</div>` : html`<p class="meta">${s.loaded ? "No monitored routes returned." : "Loading routes…"}</p>`)}
+        chains.length ? html`<div class="roads-strips">${strips.map(({ bands, ...p }) => html`<div class="roads-route">${corridor({ ...p, length: scale })}${chainLane(p.name, bands, scale)}</div>`)}</div>` : html`<p class="meta">${s.loaded ? "No monitored routes returned." : "Loading routes…"}</p>`)}
       <section class="roads-map-section" aria-label="Road map">
         <ul class="roads-legend" aria-label="Map key">
           <li><span class="roads-key roads-key--line" style="--key: var(--state-ok)"></span>Open</li>
           <li><span class="roads-key roads-key--line" style="--key: var(--state-elevated)"></span>Delays or restrictions</li>
           <li><span class="roads-key roads-key--line" style="--key: var(--state-alarm)"></span>Closure notice</li>
+          <li><span class="roads-key roads-key--chains"></span>Chains required</li>
           <li><span class="roads-key roads-key--dot" style="--key: var(--state-elevated)"></span>Work zone</li>
-          <li><span class="roads-key roads-key--dot" style="--key: var(--chart-glacier)"></span>Chain control</li>
+          <li><span class="roads-key roads-key--dot" style="--key: var(--chart-glacier)"></span>Chain checkpoint</li>
           <li><span class="roads-key roads-key--dot" style="--key: var(--chart-lake)"></span>Highway sign</li>
           <li><span class="roads-key roads-key--dot" style="--key: var(--state-muted)"></span>Closure point · planned work · camera</li>
         </ul>
@@ -222,6 +241,23 @@ export async function mount(ctx: Context) {
       </div>
       <p class="meta roads-footnote" data-page-updated>Route status, travel times, closure points, signs and lane closures from Caltrans; traffic incidents from CHP. Section status is attached by the source to the whole section; a closure notice may cover only part of it. Updated ${s.updatedAt ? fmt(s.updatedAt) : "—"}, refreshing every 2 minutes.</p>`;
   }, { signal });
+
+  // The strips' width, kept current: the page renders again when it changes, with the texts that fit.
+  const measured = new ResizeObserver(([entry]) => {
+    const width = Math.round(entry.contentRect.width), rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const now = store.get().strip;
+    if (width !== now.width || rem !== now.rem) store.set({ strip: { width, rem } });
+  });
+  let measuring: Element | undefined;
+  store.subscribe(() => {
+    const strips = document.querySelector(".roads-strips") ?? undefined;
+    if (strips === measuring) return;
+    measured.disconnect();
+    if ((measuring = strips)) measured.observe(strips);
+  }, { signal });
+  signal.addEventListener("abort", () => measured.disconnect());
+  // Texts measured before the web font arrived are measured again.
+  void document.fonts?.ready.then(() => { if (!signal.aborted && widths.size) { widths.clear(); store.set({ now: Date.now() }); } });
 
   // The map is built once and updated in place; the selection is kept by feature id.
   let lastKey = "", selectedId: string | undefined;
@@ -296,10 +332,12 @@ function scheduleRows(jobs: ReturnType<typeof workJobs>, chains: Chain[], now: n
 /** A chain as a corridor strip, with what sits on it. */
 function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) => string) {
   const markers: CorridorMarker[] = [];
+  // A marker at the route's very end is kept a hair inside it, so the strip nudges it inward of the last stop, not past it.
+  const inside = (at: number) => Math.min(c.length * (1 - 1e-9), at);
   const place = (point: Position | undefined, near = ON_ROUTE_KM) => {
     if (!point) return undefined;
     const p = alongRoute(c, point);
-    return p.off <= near ? Math.min(c.length, p.at) : undefined;
+    return p.off <= near ? inside(p.at) : undefined;
   };
   // A closure point that names its highway belongs to that route only (a Hwy 207 gate sits beside Hwy 4).
   for (const closure of s.closures.filter((x) => !x.highway || x.highway === c.route)) {
@@ -307,7 +345,9 @@ function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) =
     if (at !== undefined) markers.push({ at, kind: "closure", tone: severityTone(closure.rank), label: [closure.headline, closure.direction].filter(Boolean).join(" · "), detail: closure.description });
   }
   // One marker per stretch, where it begins on the way up; its card lists the checkpoints on this route.
-  for (const x of chainStretch(c, s.chains, CLOSURE_NEAR_KM)?.stretches ?? []) markers.push({ at: Math.min(c.length, x.at), kind: "chain", label: `${x.level} chain control ${x.extent.text}`,
+  const chained = chainStretch(c, s.chains, CLOSURE_NEAR_KM);
+  const chainNote = routeChainNote(c, chained, s.chainRead);
+  for (const x of chained?.stretches ?? []) markers.push({ at: inside(x.at), kind: "chain", label: `${x.level} chain control ${x.extent.text}`,
     detail: [x.checkpoints.map((p) => `${p.place}${p.directions ? ` (${p.directions.toLowerCase()})` : ""}${Number.isFinite(p.since) ? ` since ${fmt(p.since)}` : ""}`).join(" · "), x.inferred ? INFERRED_NOTE : ""].filter(Boolean).join(" — ") });
   const now = s.now;
   // Work that is in place now, or starts within a day: one marker per job.
@@ -339,35 +379,50 @@ function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) =
   const beyond = beyondClosures(c).find((b) => b.side === "END");
   const stub = beyond ? Math.max(4, c.length * 0.14) : 0;
   const allOpen = c.sections.every((x) => x.segment.status === "OPEN");
-  const base = strip0();
-  return beyond ? {
-    ...base,
-    summary: allOpen ? `${base.summary ?? `Open to ${beyond.last}`} · ${beyondText(beyond)}` : base.summary,
-    summaryTone: beyond.tone === "muted" || base.summaryTone === "alarm" ? base.summaryTone : beyond.tone,
-    length: c.length + stub,
-    stops: [...c.stops, { at: c.length + stub, label: beyond.toward ?? "Closed" }],
-    sections: [...base.sections, { from: c.length, to: c.length + stub, tone: beyond.tone as StateTone, partial: true, label: beyondLabel(beyond), detail: `${beyond.name}. ${beyond.description ?? ""} Not to scale.`.trim() }],
-  } : base;
-  function strip0() {
+  const status = closed ? `Closed${notice?.from ? ` past ${notice.from}` : ""}${notice?.reason ? ` · ${notice.reason}` : ""}` : allOpen ? `Open · ${minutes(c.sections.reduce((n, x) => n + (x.segment.durationMinutes ?? 0), 0))} end to end` : undefined;
+  // Chains are said beside the status, never in place of it: the road is as open as the source says. The swatch is the band's colour.
+  const chainText = chainNote && !status ? `${chainNote[0].toUpperCase()}${chainNote.slice(1)}` : chainNote;
+  const bands = chainBands(chained, s.chainRead);
+  const parts = [status, chainText ? html`<span class="roads-chain-note">${bands.length ? html`<span class="roads-key roads-key--band" aria-hidden="true"></span>` : nothing}${chainText}</span>` : undefined, beyond && allOpen ? beyondText(beyond) : undefined].filter((x) => x !== undefined);
+  const sections = c.sections.map(({ from, to, segment }, i) => {
+    const tone = segmentTone(segment), n = closureNotice(segment.description);
+    const chains = sectionChains(c, i, chained);
+    const word = segment.status === "CLOSED" ? "Closure notice" : segment.status === "OPEN" ? "Open" : segment.status.toLowerCase();
+    return {
+      from, to, tone,
+      // The source attaches a closure to the whole section; hatch it so the strip does not claim all of it is shut.
+      partial: segment.status === "CLOSED",
+      labels: sectionLabels({ status: word, closed: segment.status === "CLOSED", reason: n?.reason, chains: chains?.label, time: `${minutes(segment.durationMinutes)}${(segment.delayMinutes ?? 0) > 0 ? ` +${segment.delayMinutes}` : ""}` }),
+      detail: [chains ? `${word}, ${chains.text}` : undefined, segment.description || segment.statusCauses?.[0]?.description || `${segment.headline}: ${minutes(segment.durationMinutes)} for ${segment.distanceKm ?? "—"} km`, sinceText(segment)].filter(Boolean).join(" · "),
+    };
+  });
   return {
     name: c.route,
-    summary: closed ? `Closed${notice?.from ? ` past ${notice.from}` : ""}${notice?.reason ? ` · ${notice.reason}` : ""}` : c.sections.every((x) => x.segment.status === "OPEN") ? `Open · ${minutes(c.sections.reduce((n, x) => n + (x.segment.durationMinutes ?? 0), 0))} end to end` : undefined,
-    summaryTone: (closed ? "alarm" : "ok") as StateTone,
-    length: c.length,
-    stops: c.stops,
-    sections: c.sections.map(({ from, to, segment }) => {
-      const tone = segmentTone(segment), n = closureNotice(segment.description);
-      return {
-        from, to, tone,
-        // The source attaches a closure to the whole section; hatch it so the strip does not claim all of it is shut.
-        partial: segment.status === "CLOSED",
-        label: segment.status === "CLOSED" ? `Closure notice${n?.reason ? ` · ${n.reason}` : ""}` : `${segment.status === "OPEN" ? "Open" : segment.status.toLowerCase()} · ${minutes(segment.durationMinutes)}${(segment.delayMinutes ?? 0) > 0 ? ` +${segment.delayMinutes}` : ""}`,
-        detail: [segment.description || segment.statusCauses?.[0]?.description || `${segment.headline}: ${minutes(segment.durationMinutes)} for ${segment.distanceKm ?? "—"} km`, sinceText(segment)].filter(Boolean).join(" · "),
-      };
-    }),
+    summary: parts.length ? html`${parts.map((part, i) => html`${i ? " · " : ""}${part}`)}` : undefined,
+    summaryTone: (closed ? "alarm" : !beyond || beyond.tone === "muted" ? "ok" : beyond.tone) as StateTone,
+    length: c.length + stub,
+    stops: beyond ? [...c.stops, { at: c.length + stub, label: beyond.toward ?? "Closed" }] : c.stops,
+    sections: beyond ? [...sections, { from: c.length, to: c.length + stub, tone: beyond.tone as StateTone, partial: true, labels: [beyondLabel(beyond)], detail: `${beyond.name}. ${beyond.description ?? ""} Not to scale.`.trim() }] : sections,
     markers,
+    bands,
   };
-  }
+}
+
+/**
+ * The stretches under chain control beside a route's strip, on the strip's
+ * own scale: a band from the first to the last checkpoint with its level.
+ * The styles show it only where the strip is horizontal.
+ */
+function chainLane(route: string, bands: ChainBand[], scale: number) {
+  if (!bands.length) return nothing;
+  const pct = (v: number) => Math.max(0, Math.min(100, (v / (scale || 1)) * 100));
+  return html`<ul class=${`roads-chain-lane${bands.length > 1 ? " roads-chain-lane--several" : ""}`} aria-label=${`Chain control on ${route}`}>${bands.map((b) => {
+    const side = pct(b.from) < 12 ? "start" : pct(b.to) > 88 ? "end" : "middle";
+    return html`<li class=${`roads-chain-band roads-chain-band--${side}${b.inferred ? " is-inferred" : ""}`} style=${`--from: ${pct(b.from).toFixed(2)}%; --to: ${pct(b.to).toFixed(2)}%`} title=${`${b.label} · ${b.where}${b.inferred ? `. ${INFERRED_NOTE}` : ""}`}>
+      <span class="roads-chain-band__bar" aria-hidden="true"></span>
+      <span class="roads-chain-band__label">${b.label}<span class="sr-only"> · ${b.where}${b.inferred ? `. ${INFERRED_NOTE}` : ""}</span></span>
+    </li>`;
+  })}</ul>`;
 }
 
 /** A closure point on the map by the source's rating of it: only a severe one is red and pulses. */
@@ -383,6 +438,13 @@ function mapFeatures(s: State) {
     features.push({ type: "Feature", geometry: { type: "LineString", coordinates: seg.coordinates }, properties: {
       id: `segment:${seg.id}`, kind: "segment", ref: seg.id, label: seg.headline, focus: true,
       tone: tone === "ok" ? "pine" : tone === "elevated" ? "ochre" : tone === "alarm" ? "alarm" : "muted", weight: 4, opacity: 0.9, z: 2,
+    } });
+  }
+  // The part of a monitored route under chain control: a wide glacier line under the route's own, cut from the route's geometry between the stretch's checkpoints.
+  for (const c of routeChains(s.segments)) for (const x of chainStretch(c, s.chains, CLOSURE_NEAR_KM)?.stretches ?? []) {
+    const lines = routeSlice(c, x.from, x.to);
+    if (lines.length) features.push({ type: "Feature", geometry: lines.length === 1 ? { type: "LineString", coordinates: lines[0] } : { type: "MultiLineString", coordinates: lines }, properties: {
+      id: `chain-stretch:${x.control.id}`, kind: "chain-stretch", ref: x.control.id, label: `Chains required (${x.level}) on ${c.route} ${x.extent.text}`, extent: `${x.from.toFixed(2)}–${x.to.toFixed(2)} km`, tone: "glacier", weight: 11, opacity: 0.55, z: 1,
     } });
   }
   for (const c of s.closures)
@@ -414,6 +476,17 @@ function mapFeatures(s: State) {
   return { type: "FeatureCollection" as const, features };
 }
 
+/** Chain control on a monitored section, for its map card: "Chains required (R2) from Mill Creek to Mount Reba Road". */
+function chainsOn(s: State, seg: Segment) {
+  for (const c of routeChains(s.segments)) {
+    const i = c.sections.findIndex((x) => x.segment.id === seg.id);
+    if (i < 0) continue;
+    const chains = sectionChains(c, i, chainStretch(c, s.chains, CLOSURE_NEAR_KM));
+    return chains ? [`${chains.text[0].toUpperCase()}${chains.text.slice(1)}${s.chainRead === "current" ? "" : " when last read"}`] : [];
+  }
+  return [];
+}
+
 function mapCard(s: State, p: Record<string, any>, recordUrl: (id: string) => string) {
   const facts = (items: [string, unknown][]) => html`<dl class="roads-card__facts">${items.filter(([, v]) => v !== undefined && v !== null && v !== "").map(([k, v]) => html`<div><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>`;
   const status = (tone: StateTone | "lake" | "glacier", text: string) => html`<p class="roads-card__status"><span class="roads-dot" style=${`--key: ${toneVar(tone)}`}></span>${text}</p>`;
@@ -423,6 +496,7 @@ function mapCard(s: State, p: Record<string, any>, recordUrl: (id: string) => st
     const tone = segmentTone(seg);
     return html`<div class="roads-card"><p class="roads-card__title">${seg.headline}</p>
       ${status(tone, seg.status === "CLOSED" ? "Closure notice" : seg.status === "OPEN" ? (tone === "elevated" ? "Open · slow" : "Open") : seg.status.toLowerCase())}
+      ${chainsOn(s, seg).map((text) => status("glacier", text))}
       ${facts([[seg.status === "OPEN" ? "Open since" : "Since", sinceText(seg, true)], ["Travel time", minutes(seg.durationMinutes)], ["Delay", minutes(seg.delayMinutes)], ["Distance", seg.distanceKm ? `${seg.distanceKm} km` : undefined], ["Traffic", seg.congestion ? seg.congestion.toLowerCase() : undefined]])}
       ${seg.description ? html`<p class="roads-card__text">${seg.description}</p>` : nothing}
       ${(seg.statusCauses ?? []).filter((c) => c.description && c.description !== seg.description).map((c) => html`<p class="roads-card__text">${c.description}${c.extent && c.extent !== "UNKNOWN" ? ` (${c.extent.toLowerCase().replaceAll("_", " ")})` : ""}</p>`)}
@@ -443,6 +517,14 @@ function mapCard(s: State, p: Record<string, any>, recordUrl: (id: string) => st
       ${control.description ? html`<p class="roads-card__text">${control.description}</p>` : nothing}
       ${control.signs?.length && !extent.single ? html`<p class="meta">Part of the ${control.level} stretch ${extent.text}${control.inferred ? `. ${INFERRED_NOTE}` : ""}</p>` : nothing}
       ${Number.isFinite(c.since) ? html`<p class="meta">Since ${fmt(c.since)}</p>` : nothing}</div>`;
+  }
+  if (p.kind === "chain-stretch") {
+    const control = s.chains.find((x) => x.id === p.ref);
+    if (!control) return nothing;
+    return html`<div class="roads-card"><p class="roads-card__title">${control.level} chain control · ${control.highway.replace(/^Highway /, "Hwy ")}</p>${status("glacier", `Chains required ${chainExtent(control).text}`)}
+      ${control.description ? html`<p class="roads-card__text">${control.description}</p>` : nothing}
+      <p class="meta">Drawn on the monitored route between the stretch's first and last checkpoints there.${control.inferred ? ` ${INFERRED_NOTE}` : ""}</p>
+      ${Number.isFinite(control.since) ? html`<p class="meta">Since ${fmt(control.since)}</p>` : nothing}</div>`;
   }
   if (p.kind === "event") {
     const e = s.events.find((x) => x.id === p.ref);
