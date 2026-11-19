@@ -11,7 +11,7 @@ import { stateUrl } from "../state";
 import { regionTimeZone } from "../time";
 import { ageText } from "../mesh-fleet";
 import {
-  alongRoute, beyondClosures, beyondText, chainCheckpoints, chainExtent, chainStretch, closureNotice, routeChains, segmentName, signBoard, workJobs, workName,
+  alongRoute, beyondClosures, beyondLabel, beyondText, chainCheckpoints, chainExtent, chainStretch, closureNotice, roadsAnswer, routeChains, segmentName, severityRankOf, severityTone, signBoard, workJobs, workName,
   type Chain, type ChainControl, type Position, type Segment, type Sign, type WorkWindow,
 } from "../road-corridor";
 import { createStore, region } from "@sierragridteam/design-system/lib/region";
@@ -35,7 +35,7 @@ type Layer = Extract<Awaited<ReturnType<Context["client"]["getMapLayer"]>>, { no
 type EventList = Extract<Awaited<ReturnType<Context["client"]["listEvents"]>>, { notModified: false }>["data"];
 type RoadEvent = EventList["events"][number];
 type Cameras = Extract<Awaited<ReturnType<Context["client"]["listCameras"]>>, { notModified: false }>["data"];
-type Closure = { id: string; headline: string; highway?: string; direction?: string; description?: string; coordinates: Position };
+type Closure = { id: string; headline: string; /** The source's rating of the closure point; it sets how loud the marker is. */ rank: number; highway?: string; direction?: string; description?: string; coordinates: Position };
 
 type State = {
   /** What Grid has on record for the last RECORD_DAYS (from `recordFrom`): not read yet, failed (keeping the last good read) or answered. */
@@ -104,11 +104,11 @@ export async function mount(ctx: Context) {
     store.set({
       segments: seg ? seg.features.filter((f) => f.geometry?.type === "LineString").map((f) => {
         const p = f.properties as any;
-        return { id: p.id, headline: p.headline, status: p.status, description: p.description, coordinates: (f.geometry as any).coordinates, ...p.road };
+        return { id: p.id, headline: p.headline, status: p.status, description: p.description, severity: p.severity, severityRank: p.severityRank, coordinates: (f.geometry as any).coordinates, ...p.road };
       }) : prev.segments,
       closures: cc ? cc.features.flatMap((f) => {
         const at = pointOf(f.geometry), p = f.properties as any;
-        return at && (p.category === "closed" || p.status === "CLOSED") ? [{ id: p.id, headline: p.headline, highway: String(p.chainControl?.highway ?? "").replace(/^Highway /, "Hwy "), direction: p.chainControl?.direction, description: p.description || p.summary, coordinates: at }] : [];
+        return at && (p.category === "closed" || p.status === "CLOSED") ? [{ id: p.id, headline: p.headline, rank: severityRankOf(p), highway: String(p.chainControl?.highway ?? "").replace(/^Highway /, "Hwy "), direction: p.chainControl?.direction, description: p.description || p.summary, coordinates: at }] : [];
       }) : prev.closures,
       chains: cc ? cc.features.flatMap((f) => {
         const at = pointOf(f.geometry), p = f.properties as any;
@@ -164,7 +164,7 @@ export async function mount(ctx: Context) {
     const closed = s.segments.filter((x) => x.status === "CLOSED");
     const open = s.segments.filter((x) => x.status === "OPEN");
     const delay = s.segments.reduce((sum, x) => sum + (x.delayMinutes ?? 0), 0);
-    const answer = headline(chains, s);
+    const answer = roadsAnswer(chains, { segments: s.segments, controls: s.chains, activeWork: s.events.filter((e) => e.status === "ACTIVE" && e.roadIncident?.closure).length });
     // A strip can run past its route (a closed stub beyond the last stop), so the shared scale comes from the strips.
     const strips = chains.map((c) => strip(c, s, work, recordUrl));
     const stretches = chains.flatMap((c) => chainStretch(c, s.chains) ?? []);
@@ -196,7 +196,7 @@ export async function mount(ctx: Context) {
           <li><span class="roads-key roads-key--dot" style="--key: var(--state-elevated)"></span>Work zone</li>
           <li><span class="roads-key roads-key--dot" style="--key: var(--chart-glacier)"></span>Chain control</li>
           <li><span class="roads-key roads-key--dot" style="--key: var(--chart-lake)"></span>Highway sign</li>
-          <li><span class="roads-key roads-key--dot" style="--key: var(--state-muted)"></span>Planned work · camera</li>
+          <li><span class="roads-key roads-key--dot" style="--key: var(--state-muted)"></span>Closure point · planned work · camera</li>
         </ul>
         <div id="roads-map"></div>
       </section>
@@ -293,43 +293,6 @@ function scheduleRows(jobs: ReturnType<typeof workJobs>, chains: Chain[], now: n
   }).sort((a, b) => rank(a.group) - rank(b.group));
 }
 
-/** The page's headline: closures first, then what is open, then work. */
-function headline(chains: Chain[], s: State) {
-  const answer = todaysAnswer(chains, s);
-  return { ...answer, lines: [...answer.lines, ...chains.flatMap((c) => beyondClosures(c).map((b) => beyondText(b)))] };
-}
-function todaysAnswer(chains: Chain[], s: State) {
-  const lines: string[] = [];
-  const closures = s.segments.filter((x) => x.status === "CLOSED").map((x) => {
-    const name = segmentName(x.headline), notice = closureNotice(x.description);
-    const where = notice?.from ? `past ${notice.from}` : `${name.from} to ${name.to}`;
-    return `${name.route} closed ${where}${notice?.reason ? ` — ${notice.reason}` : ""}`;
-  });
-  for (const c of chains) {
-    // The open stretch from the start of the route, as one phrase.
-    const openRun = [];
-    for (const sec of c.sections) { if (sec.segment.status !== "OPEN") break; openRun.push(sec); }
-    if (openRun.length === c.sections.length) lines.push(`${c.route} open ${c.stops[0].label} to ${c.stops.at(-1)!.label}`);
-    else if (openRun.length) lines.push(`${c.route} open ${c.stops[0].label} to ${c.stops[openRun.length].label}`);
-  }
-  // A seasonal closure past a route's end holds all winter, so it never leads: the title is
-  // what changed today (a closure on a monitored section, a restriction, chain control). It
-  // is the last line under the title instead, where it stays true without shouting.
-  const chained = chains.flatMap((c) => chainStretch(c, s.chains)?.text ?? []).join("; ") || undefined;
-  if (chained) lines.unshift(chained);
-  const restricted = s.segments.filter((x) => x.status === "RESTRICTED").map((x) => `${x.headline} restricted`);
-  const activeWork = s.events.filter((e) => e.status === "ACTIVE" && e.roadIncident?.closure).length;
-  if (activeWork) lines.push(`${activeWork} work zone${activeWork === 1 ? "" : "s"} active`);
-  if (closures.length) return { title: closures.join("; "), lines: [...restricted, ...lines], tone: "alarm" as const };
-  if (restricted.length) return { title: restricted.join("; "), lines, tone: "elevated" as const };
-  if (chained) return { title: chained, lines: lines.filter((l) => l !== chained && !/ open /.test(l)), tone: "elevated" as const };
-  if (!s.segments.length) return { title: "Route status unavailable", lines: lines.filter((l) => !/ open /.test(l)), tone: "ok" as const };
-  // "Open" is only said of sections the source reports open; any other status (maintenance, unspecified) is named.
-  const other = s.segments.filter((x) => x.status !== "OPEN");
-  if (other.length) return { title: other.map((x) => `${x.headline}: ${x.status.toLowerCase().replaceAll("_", " ")}`).join("; "), lines, tone: "elevated" as const };
-  return { title: "All monitored routes are open", lines: lines.filter((l) => !/ open /.test(l)), tone: "ok" as const };
-}
-
 /** A chain as a corridor strip, with what sits on it. */
 function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) => string) {
   const markers: CorridorMarker[] = [];
@@ -341,7 +304,7 @@ function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) =
   // A closure point that names its highway belongs to that route only (a Hwy 207 gate sits beside Hwy 4).
   for (const closure of s.closures.filter((x) => !x.highway || x.highway === c.route)) {
     const at = place(closure.coordinates, CLOSURE_NEAR_KM);
-    if (at !== undefined) markers.push({ at, kind: "closure", tone: "alarm", label: [closure.headline, closure.direction].filter(Boolean).join(" · "), detail: closure.description });
+    if (at !== undefined) markers.push({ at, kind: "closure", tone: severityTone(closure.rank), label: [closure.headline, closure.direction].filter(Boolean).join(" · "), detail: closure.description });
   }
   // One marker per stretch, where it begins on the way up; its card lists the checkpoints on this route.
   for (const x of chainStretch(c, s.chains, CLOSURE_NEAR_KM)?.stretches ?? []) markers.push({ at: Math.min(c.length, x.at), kind: "chain", label: `${x.level} chain control ${x.extent.text}`,
@@ -372,18 +335,18 @@ function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) =
   }
   const closed = c.sections.find((x) => x.segment.status === "CLOSED");
   const notice = closureNotice(closed?.segment.description);
-  // A closure past the last stop is drawn as a closed stub beyond it. Its length is nominal: the source gives no distance.
+  // A closure past the last stop is drawn as a closed stub beyond it, in the tone of its own severity. Its length is nominal: the source gives no distance.
   const beyond = beyondClosures(c).find((b) => b.side === "END");
   const stub = beyond ? Math.max(4, c.length * 0.14) : 0;
   const allOpen = c.sections.every((x) => x.segment.status === "OPEN");
   const base = strip0();
   return beyond ? {
     ...base,
-    summary: allOpen ? `${base.summary ?? `Open to ${beyond.last}`} · ${beyond.name} past ${beyond.last}` : base.summary,
-    summaryTone: base.summaryTone,
+    summary: allOpen ? `${base.summary ?? `Open to ${beyond.last}`} · ${beyondText(beyond)}` : base.summary,
+    summaryTone: beyond.tone === "muted" || base.summaryTone === "alarm" ? base.summaryTone : beyond.tone,
     length: c.length + stub,
     stops: [...c.stops, { at: c.length + stub, label: beyond.toward ?? "Closed" }],
-    sections: [...base.sections, { from: c.length, to: c.length + stub, tone: "muted" as StateTone, partial: true, label: "Closed for the winter", detail: `${beyond.name}. ${beyond.description ?? ""} Not to scale.`.trim() }],
+    sections: [...base.sections, { from: c.length, to: c.length + stub, tone: beyond.tone as StateTone, partial: true, label: beyondLabel(beyond), detail: `${beyond.name}. ${beyond.description ?? ""} Not to scale.`.trim() }],
   } : base;
   function strip0() {
   return {
@@ -407,6 +370,12 @@ function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) =
   }
 }
 
+/** A closure point on the map by the source's rating of it: only a severe one is red and pulses. */
+const closureMark = (rank: number) => {
+  const tone = severityTone(rank);
+  return { tone: tone === "elevated" ? "ochre" : tone, radius: tone === "muted" ? 5 : 7, pulse: tone === "alarm" };
+};
+
 function mapFeatures(s: State) {
   const features: { type: "Feature"; geometry: any; properties: Record<string, unknown> }[] = [];
   for (const seg of s.segments) {
@@ -417,7 +386,7 @@ function mapFeatures(s: State) {
     } });
   }
   for (const c of s.closures)
-    features.push({ type: "Feature", geometry: { type: "Point", coordinates: c.coordinates }, properties: { id: `closure:${c.id}`, kind: "closure", ref: c.id, label: c.headline, tone: "alarm", radius: 7, pulse: true, z: 6 } });
+    features.push({ type: "Feature", geometry: { type: "Point", coordinates: c.coordinates }, properties: { id: `closure:${c.id}`, kind: "closure", ref: c.id, label: c.headline, ...closureMark(c.rank), z: 6 } });
   // Every checkpoint of every stretch: the layer's own point is only the stretch's low end.
   for (const p of s.chains.flatMap(chainCheckpoints)) if (p.coordinates)
     features.push({ type: "Feature", geometry: { type: "Point", coordinates: p.coordinates }, properties: { id: `chain:${p.id}`, kind: "chain", ref: p.id, label: `${p.level ? `${p.level} chain control` : "Restriction"} · ${p.place}`, tone: "glacier", radius: 5, z: 5 } });
@@ -457,12 +426,12 @@ function mapCard(s: State, p: Record<string, any>, recordUrl: (id: string) => st
       ${facts([[seg.status === "OPEN" ? "Open since" : "Since", sinceText(seg, true)], ["Travel time", minutes(seg.durationMinutes)], ["Delay", minutes(seg.delayMinutes)], ["Distance", seg.distanceKm ? `${seg.distanceKm} km` : undefined], ["Traffic", seg.congestion ? seg.congestion.toLowerCase() : undefined]])}
       ${seg.description ? html`<p class="roads-card__text">${seg.description}</p>` : nothing}
       ${(seg.statusCauses ?? []).filter((c) => c.description && c.description !== seg.description).map((c) => html`<p class="roads-card__text">${c.description}${c.extent && c.extent !== "UNKNOWN" ? ` (${c.extent.toLowerCase().replaceAll("_", " ")})` : ""}</p>`)}
-      ${(seg.beyond ?? []).filter((b) => b.status === "CLOSED").map((b) => html`<p class="roads-card__text"><strong>${b.name || "Closed"} past this section.</strong> ${b.description ?? ""}</p>`)}</div>`;
+      ${(seg.beyond ?? []).filter((b) => b.status === "CLOSED").map((b) => html`${status(severityTone(severityRankOf(b)), `${beyondLabel(b)} ${b.side === "START" ? "before" : "past"} this section`)}<p class="roads-card__text"><strong>${b.headline || b.name || "Closure"}.</strong> ${b.description ?? ""}</p>`)}</div>`;
   }
   if (p.kind === "closure") {
     const c = s.closures.find((x) => x.id === p.ref);
     if (!c) return nothing;
-    return html`<div class="roads-card"><p class="roads-card__title">${c.headline[0].toUpperCase() + c.headline.slice(1)}</p>${status("alarm", ["Closure point", c.direction].filter(Boolean).join(" · "))}
+    return html`<div class="roads-card"><p class="roads-card__title">${c.headline[0].toUpperCase() + c.headline.slice(1)}</p>${status(severityTone(c.rank), ["Closure point", c.direction].filter(Boolean).join(" · "))}
       ${c.description ? html`<p class="roads-card__text">${c.description}</p>` : html`<p class="meta">Caltrans marks a closure here; the closed stretch runs from this point.</p>`}</div>`;
   }
   if (p.kind === "chain") {

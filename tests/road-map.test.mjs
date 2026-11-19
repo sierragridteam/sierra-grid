@@ -40,7 +40,9 @@ test("a route closure notice never paints the full monitored route as a closure 
     chain_control: layer([marker]),
   });
   assert.equal(entries[0].kind, "restriction");
-  assert.equal(entries[0].tone, "alarm");
+  // The closure point is as loud as the source rates it: a pass closure it rates MINOR is not an alarm.
+  assert.equal(entries[0].tone, "brass");
+  assert.equal(roadMapEntries({ chain_control: layer([feature("cc:severe", { category: "closed", severity: "SEVERE", severityRank: 3 })]) })[0].tone, "alarm");
   assert.deepEqual(entries[0].feature.geometry, marker.geometry);
   assert.equal(entries[1].kind, "route");
   assert.equal(entries[1].tone, "green");
