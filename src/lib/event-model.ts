@@ -42,7 +42,14 @@ export function reportTime(report: Report): number {
 export const newestFirst = (a: Report, b: Report) => reportTime(b) - reportTime(a) || a.id.localeCompare(b.id);
 export const feedOrder = (a: Report, b: Report) =>
   (severityRank[b.severity] ?? -1) - (severityRank[a.severity] ?? -1) || newestFirst(a, b);
-export function headlineCounts(reports: Report[], truncated: boolean, place = "Ebbetts Pass Corridor") {
+/**
+ * The Overview's sentence. `reports` are the events (things that happen);
+ * `standing` are the standing-state reports beside them (a monitored road, a
+ * burn status). Those are not counted as events, but one that is severe is
+ * said: the list beside the sentence shows it, and "2 are severe" beside four
+ * severe items read as a miscount (two closed roads, 2026-11-19).
+ */
+export function headlineCounts(reports: Report[], truncated: boolean, place = "Ebbetts Pass Corridor", standing: Report[] = []) {
   const active = reports.filter(e => e.status === "ACTIVE").length;
   const scheduled = reports.filter(e => e.status === "SCHEDULED").length;
   const extreme = reports.filter(e => e.severity === "EXTREME").length;
@@ -54,7 +61,10 @@ export function headlineCounts(reports: Report[], truncated: boolean, place = "E
   const second = extreme ? `${truncated ? "At least " : ""}${extreme} ${extreme === 1 ? "is" : "are"} extreme.`
     : severe ? `${truncated ? "At least " : ""}${severe} ${severe === 1 ? "is" : "are"} severe.`
     : truncated ? "More reports are available." : "None are rated severe or extreme.";
-  return { first, second, active, scheduled, total, severe, extreme };
+  const grave = standing.filter(e => e.status === "ACTIVE" && (e.severity === "SEVERE" || e.severity === "EXTREME"));
+  const kinds = [...new Set(grave.map(e => typeLabel(e.layer).toLowerCase()))].join(", ");
+  const also = grave.length ? ` ${grave.length} standing ${grave.length === 1 ? "condition is" : "conditions are"} severe${grave.some(e => e.severity === "EXTREME") ? " or extreme" : ""}: ${kinds}.` : "";
+  return { first, second: second + also, active, scheduled, total, severe, extreme, standingSevere: grave.length };
 }
 export function relativeTime(value: string | null | undefined, now = Date.now()) {
   const time = Date.parse(value || "");

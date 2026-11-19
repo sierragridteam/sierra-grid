@@ -47,7 +47,7 @@ export async function mount(ctx: Context) {
   };
   location.subscribe(s => { if (s.weatherLocation) { ctx.state.weatherLocation = s.weatherLocation; store.set({ location: s.weatherLocation }); } }, { signal });
   region(ctx.$("overview-summary"), store, s => {
-    const count = s.events ? headlineCounts(eventsOnly(s.events), s.partial) : null;
+    const count = s.events ? headlineCounts(eventsOnly(s.events), s.partial, undefined, s.events.filter(e => !isOccurrence(e))) : null;
     const attention = s.summary ? attentionFor(s.summary) : undefined;
     return summaryBanner({ kicker: "Ebbetts Pass Corridor", level: 1,
       headline: count ? `${count.first} ${count.second}` : s.eventError ? "Current event counts are unavailable." : "Checking the latest reports across the corridor.",
