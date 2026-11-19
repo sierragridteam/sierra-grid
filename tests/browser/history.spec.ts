@@ -24,6 +24,12 @@ test("event filters and selection are shareable, and the homepage feed uses live
   const happening = (e: any) => (e.nature && e.nature !== "EVENT_NATURE_UNSPECIFIED" ? e.nature !== "STATE" : e.layer !== "MESH");
   await expect(page.locator("#overview-summary h1")).toContainText(String(actual.events.filter(happening).length));
   await expect(page.locator("#overview-feed")).toHaveCount(0);
+  // The severity sentence is the list's own count: read both off the page and compare.
+  await expect(page.locator("#attention")).toHaveAttribute("aria-busy", "false");
+  const badges = await page.locator("#attention li .badge").allInnerTexts();
+  const extreme = badges.filter(b => /extreme/i.test(b)).length, severe = badges.filter(b => /severe/i.test(b)).length;
+  const said = extreme ? `${extreme} ${extreme === 1 ? "is" : "are"} extreme.` : severe ? `${severe} ${severe === 1 ? "is" : "are"} severe.` : "None are rated severe or extreme.";
+  await expect(page.locator("#overview-summary h1")).toContainText(said);
   await expect(page.locator("#overview-summary")).not.toContainText("Worth your attention");
   await page.locator("#overview-summary").getByRole("link", { name: "Browse all events" }).click(); await ready(page);
   await page.locator(".feed-item a").first().click(); await ready(page);

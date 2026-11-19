@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { attentionFor } from "../src/lib/attention.ts";
+import { attentionFor, attentionSentence } from "../src/lib/attention.ts";
 const domain = (name, patch = {}) => ({
   domain: name,
   status: "OK",
@@ -71,4 +71,26 @@ test("ambient mesh counts and benign burns do not inflate attention", () => {
     domain("burn", { highestSeverity: "MODERATE" }),
   );
   assert.equal(attentionFor(input).items.length, 0);
+});
+
+test("the severity sentence is counted from the list it sits beside, whatever the list holds", () => {
+  const summary = { generatedAt: "2026-11-19T03:38:00Z", domains: [
+    { domain: "weather", status: "OK", highestSeverity: "SEVERE", headlines: [{ id: "wx:1", kind: "EVENT", layer: "WEATHER_ALERT", severity: "SEVERE", headline: "Winter Storm Warning" }] },
+    // A seasonal closure past a road's end: a condition with no event behind it.
+    { domain: "roads", status: "OK", highestSeverity: "SEVERE", headlines: [
+      { id: "road:hwy4-arnold-bearvalley:beyond-0", kind: "CONDITION", layer: "ROAD_SEGMENT", severity: "SEVERE", headline: "Hwy 4: Ebbetts Pass winter closure" },
+      { id: "chp:1", kind: "EVENT", layer: "ROAD_INCIDENT", severity: "MODERATE", headline: "Collision" }] },
+    { domain: "fire", status: "OK", highestSeverity: "INFO", headlines: [] },
+    { domain: "evacuation", status: "OK", highestSeverity: "INFO", headlines: [] },
+    { domain: "power", status: "OK", highestSeverity: "INFO", headlines: [] },
+  ] };
+  const { items } = attentionFor(summary);
+  assert.equal(items.filter((i) => i.rank >= 3).length, 2);
+  assert.equal(attentionSentence(items), "2 are severe.");
+  for (let n = 0; n <= items.length; n++) {
+    const shown = items.slice(0, n), severe = shown.filter((i) => i.rank === 3).length;
+    assert.equal(attentionSentence(shown), severe ? `${severe} ${severe === 1 ? "is" : "are"} severe.` : "None are rated severe or extreme.");
+  }
+  assert.equal(attentionSentence([{ rank: 4 }, { rank: 3 }]), "1 is extreme.");
+  assert.equal(attentionSentence([]), "None are rated severe or extreme.");
 });
