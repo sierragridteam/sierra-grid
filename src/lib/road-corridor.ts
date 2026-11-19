@@ -376,7 +376,7 @@ function listedChains(listed: RoadChain[], route: RouteChains | undefined) {
   const at = (x: RoadChain) => route?.stretches.find((s) => s.control.id === x.eventId)?.at ?? Infinity;
   const extent = (x: RoadChain) => { const from = x.from || x.to, to = x.to || x.from; return !from ? "here" : from === to ? `at ${from}` : `from ${from} to ${to}`; };
   return listed.filter((x) => x.level).map((x, i) => ({ x, i, at: at(x) })).sort((a, b) => a.at - b.at || a.i - b.i)
-    .map(({ x }) => ({ level: x.level, id: x.eventId, extent: extent(x) }));
+    .map(({ x }) => ({ level: x.level, id: x.eventId, extent: extent(x), headline: x.headline || undefined, since: x.since ? Date.parse(x.since) : NaN }));
 }
 /** The stretches lying on a section, from their extents on the route. */
 function stretchesOn(c: Chain, index: number, route: RouteChains | undefined) {
@@ -387,19 +387,103 @@ function stretchesOn(c: Chain, index: number, route: RouteChains | undefined) {
     : x.from >= section.from && (x.from < section.to || (last && x.from <= section.to))));
 }
 
+/** What a route's sections list that the chain-control layer gives no stretch for, each once however many sections list it. */
+function listedOnly(c: Chain, route: RouteChains | undefined) {
+  const drawn = new Set(route?.stretches.map((x) => x.control.id));
+  return [...new Map(c.sections.flatMap((x) => (Array.isArray(x.segment.chains) ? listedChains(x.segment.chains, undefined) : []))
+    .filter((x) => !(x.id && drawn.has(x.id))).map((x) => [x.id ?? `${x.level} ${x.extent}`, x])).values()];
+}
+
 /**
- * Chain control in a route's one-line summary: the stretches on it, or what
- * is not known. The stretches come from the chain-control layer; when that
- * could not be read, the requirements the sections themselves list are named
- * instead. Nothing is returned only when there is no stretch and that is
- * known: the layer is current, or every section says it has none.
+ * The chain requirements on a route from both sources. `placed` are the
+ * chain-control layer's stretches, which have checkpoints and so an extent.
+ * `listed` are requirements the route's sections list that the layer gives
+ * no stretch for (the layer could not be read, or the two were read a few
+ * minutes apart): they are known in words only, with nowhere to draw them.
+ */
+export function chainsOnRoute(c: Chain, controls: ChainControl[], nearKm = 8) {
+  const placed = chainStretch(c, controls, nearKm);
+  const listed = listedOnly(c, placed).map((x) => ({
+    ...x,
+    /** "Hwy 4 from Mill Creek to Tamarack (R2)". */
+    where: `${c.route} ${x.extent} (${x.level})`,
+    /** The source's own line for the stretch; ours only if it sends none. */
+    text: x.headline ?? `Chains required on ${c.route} ${x.extent} (${x.level})`,
+  }));
+  if (!placed && !listed.length) return undefined;
+  return {
+    route: c.route, placed, listed,
+    levels: [...new Set([...(placed?.levels ?? []), ...listed.map((x) => x.level)])].sort(),
+    /** For the page's title: the layer's stretches, then what only the sections list. */
+    text: [...(placed ? [placed.text] : []), ...listed.map((x) => x.text)].join("; "),
+    /** Where each is and since when, for the figure. */
+    items: [...(placed ? [{ where: placed.where, since: placed.since }] : []), ...listed.map((x) => ({ where: x.where, since: x.since }))],
+  };
+}
+
+/**
+ * A section's short text, longest first, for a strip that may not have room
+ * for it: status, the closure's reason, chains, travel time. What goes first
+ * is what matters least where chains are required: the time, then the
+ * status word, which the section's colour already carries. The chain level
+ * is in every one. A closure notice is never dropped for it: there the
+ * reason goes, then the chains. A section without chains has one text.
+ */
+export function sectionLabels(p: { status: string; closed?: boolean; reason?: string; chains?: string; time?: string }) {
+  const join = (...parts: (string | undefined)[]) => parts.filter(Boolean).join(" · ");
+  const full = join(p.status, p.closed ? p.reason : undefined, p.chains, p.closed ? undefined : p.time);
+  if (!p.chains) return [full];
+  const all = p.closed ? [full, join(p.status, p.chains), p.status] : [full, join(p.status, p.chains), `${p.chains[0].toUpperCase()}${p.chains.slice(1)}`];
+  return all.filter((text, i) => all.indexOf(text) === i);
+}
+/** The first text that fits the room, else the shortest; all of it when the room is not known. */
+export const fitLabel = (labels: string[], room: number | undefined, width: (text: string) => number) =>
+  (room === undefined ? labels[0] : labels.find((text) => width(text) <= room) ?? labels.at(-1)!);
+/**
+ * The room a section's text has on its strip (px), from the strip's width.
+ * Across the page the text sits over its section, so the room is the
+ * section's share of the strip. Below about 34rem the design system's
+ * corridor runs down the page with the texts in a column beside it, and the
+ * room is what the place names and the track leave (about 8.75rem: an
+ * estimate of the component's layout, not something it promises). A wrong
+ * estimate costs a text shortened a little early, or cut by the component's
+ * own ellipsis as before. Unknown until the strip has been measured.
+ */
+export function labelRoom(strip: { width: number; rem: number }, section: { from: number; to: number }, length: number) {
+  if (!(strip.width > 0) || !(length > 0)) return undefined;
+  const rem = strip.rem || 16;
+  return strip.width <= 34 * rem ? strip.width - 8.75 * rem : ((section.to - section.from) / length) * strip.width - 12;
+}
+
+/**
+ * Chain control in a route's one-line summary: the requirements on it, from
+ * either source, or what is not known. Nothing is returned only when there
+ * is none and that is known: the layer is current, or every section says it
+ * has none.
  */
 export function routeChainNote(c: Chain, route: RouteChains | undefined, read: ChainRead = "current") {
-  if (route) return `chains ${listOf(route.stretches.map((x) => `${x.level} ${x.extent.text}`))}${read === "current" ? "" : " when last read"}`;
-  const listed = new Map(c.sections.flatMap((x) => (Array.isArray(x.segment.chains) ? listedChains(x.segment.chains, undefined) : [])).map((x) => [x.id ?? `${x.level} ${x.extent}`, x]));
-  if (listed.size) return `chains ${listOf([...listed.values()].map((x) => `${x.level} ${x.extent}`))}`;
-  if (read === "current" || c.sections.every((x) => Array.isArray(x.segment.chains))) return undefined;
+  const listed = listedOnly(c, route);
+  const placed = (route?.stretches ?? []).map((x) => `${x.level} ${x.extent.text}`);
+  if (placed.length || listed.length) return `chains ${listOf([...placed, ...listed.map((x) => `${x.level} ${x.extent}`)])}${route && read !== "current" ? " when last read" : ""}`;
+  if (read === "current" || sectionsListNone([c])) return undefined;
   return read === "unknown" ? "chain control unavailable" : "chain control not current";
+}
+/** Every section of every route carries the source's list, and (there being no requirement) every list is empty. */
+const sectionsListNone = (chains: Chain[]) => chains.length > 0 && chains.every((c) => c.sections.every((x) => Array.isArray(x.segment.chains)));
+
+/**
+ * The "Chain controls" figure for the monitored routes: the levels and where
+ * they are, from either source, or what can honestly be said instead.
+ * `none` is the chain-control layer, read, having no requirement on a
+ * monitored route (other highways with one are `nearby`); `none-listed` is
+ * the layer unread and every section listing none, which speaks for the
+ * monitored routes only; `unknown` is neither source knowing.
+ */
+export function chainFigure(chains: Chain[], controls: ChainControl[], read: ChainRead) {
+  const on = chains.flatMap((c) => chainsOnRoute(c, controls) ?? []);
+  if (on.length) return { state: "required" as const, levels: [...new Set(on.flatMap((x) => x.levels))].sort(), items: on.flatMap((x) => x.items), nearby: [] as string[] };
+  if (read === "unknown") return { state: sectionsListNone(chains) ? "none-listed" as const : "unknown" as const, levels: [], items: [], nearby: [] as string[] };
+  return { state: "none" as const, levels: [], items: [], nearby: [...new Set(controls.filter((x) => x.level).map((x) => shortRoute(x.highway)))] };
 }
 const listOf = (items: string[]) => (items.length < 3 ? items.join(" and ") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
 
@@ -431,7 +515,8 @@ export function roadsAnswer(chains: Chain[], s: { segments: Segment[]; controls:
     if (openRun.length === c.sections.length) lines.push(`${c.route} open ${c.stops[0].label} to ${c.stops.at(-1)!.label}`);
     else if (openRun.length) lines.push(`${c.route} open ${c.stops[0].label} to ${c.stops[openRun.length].label}`);
   }
-  const chained = chains.flatMap((c) => chainStretch(c, s.controls)?.text ?? []).join("; ") || undefined;
+  // From the chain-control layer, and from what the sections list when the layer gives no stretch for it.
+  const chained = chains.flatMap((c) => chainsOnRoute(c, s.controls)?.text ?? []).join("; ") || undefined;
   if (chained) lines.unshift(chained);
   const restricted = s.segments.filter((x) => x.status === "RESTRICTED").map((x) => `${x.headline} restricted`);
   if (s.activeWork) lines.push(`${s.activeWork} work zone${s.activeWork === 1 ? "" : "s"} active`);

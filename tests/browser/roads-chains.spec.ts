@@ -14,8 +14,10 @@ const sign = (id: string, place: string, direction: string, coordinates: [number
 /** Real checkpoints on Hwy 4 between Arnold and Bear Valley, low to high. */
 const GATES: [string, [number, number]][] = [["MILL CREEK", [-120.24879, 38.32371]], ["COTTAGE SPRINGS", [-120.21184, 38.35049]], ["POISON SPRINGS", [-120.18315, 38.38902]], ["BIG MEADOWS", [-120.10318, 38.41775]], ["TAMARACK", [-120.07671, 38.43934]]];
 const title = (place: string) => place.toLowerCase().replace(/(^|\s)([a-z])/g, (_, a, b) => a + b.toUpperCase());
-function requirement(level: string, first: number, last: number) {
-  const gates = GATES.slice(first, last + 1), from = title(gates[0][0]), to = title(gates.at(-1)![0]);
+/** The ends of the lowest monitored section of Hwy 4, 13 km of the route: the shortest section there is. */
+const LOW: typeof GATES = [["ANGELS CAMP", [-120.54006, 38.0675]], ["MURPHYS", [-120.45612, 38.1391]]];
+function requirement(level: string, first: number, last: number, all = GATES) {
+  const gates = all.slice(first, last + 1), from = title(gates[0][0]), to = title(gates.at(-1)![0]);
   return {
     type: "Feature", geometry: { type: "Point", coordinates: gates[0][1] },
     properties: {
@@ -37,16 +39,16 @@ const answer = (change: (body: any) => any) => async (route: Route) => {
   }
 };
 
-/** `chains` is the chain-control layer ("fail": the request fails); `listed` is what the roads themselves list (default: the same; "unknown": nothing). */
-async function roads(page: Page, chains: "fail" | ReturnType<typeof requirement>[], listed: "unknown" | ReturnType<typeof requirement>[] = chains === "fail" ? "unknown" : chains) {
+/** `chains` is the chain-control layer ("fail": the request fails); `listed` is what the roads themselves list (default: the same; "unknown": nothing), on `road`. */
+async function roads(page: Page, chains: "fail" | ReturnType<typeof requirement>[], listed: "unknown" | ReturnType<typeof requirement>[] = chains === "fail" ? "unknown" : chains, road = "road:hwy4-arnold-bearvalley") {
   await page.route((url) => url.pathname.endsWith("/map/road_segment.geojson"), answer((body) => {
     for (const f of body.features) {
       f.properties.status = "OPEN";
       if (!f.properties.road) continue;
       Object.assign(f.properties.road, { delayMinutes: 0, congestion: "CLEAR" });
-      // What the API lists on each road: the requirements under test on Arnold to Bear Valley, none elsewhere; nothing at all when chain control cannot be read.
+      // What the API lists on each road: the requirements under test on one road (Arnold to Bear Valley unless said), none elsewhere; or nothing at all.
       if (listed === "unknown") delete f.properties.road.chains;
-      else f.properties.road.chains = f.properties.id !== "road:hwy4-arnold-bearvalley" ? [] : listed.map((x) => {
+      else f.properties.road.chains = f.properties.id !== road ? [] : listed.map((x) => {
         const k = x.properties.chainControl;
         return { level: k.level, eventId: x.properties.id, headline: x.properties.headline, from: k.from.place, to: k.to.place, since: x.properties.effective, inferred: false };
       });
@@ -140,14 +142,47 @@ test("when the chain-control layer cannot be read, no band is drawn and nothing 
   expect((await page.locator("#roads-page").innerText()).toLowerCase()).not.toMatch(/no chain|chains? none|none on monitored/);
 });
 
-test("the layer cannot be read but the road lists its requirement: the section and the route say it, and no band is drawn", async ({ page }) => {
+test("the layer cannot be read but the road lists its requirement: title, figure, section and route say it, and no band is drawn", async ({ page }) => {
   await roads(page, "fail", [requirement("R2", 0, 4)]);
   const route = hwy4(page);
+  // The page's answer is the requirement, in the API's own words for the stretch; it does not say everything is open.
+  await expect(page.locator(".roads-answer")).toHaveText("Hwy 4 chains required, Mill Creek to Tamarack (R2)");
+  const figure = page.locator(".roads-kpis .stat").nth(1);
+  await expect(figure).toContainText("R2");
+  await expect(figure).toContainText("Hwy 4 from Mill Creek to Tamarack (R2)");
+  await expect(figure).not.toContainText("unavailable");
   await expect(route.locator(".ds-corridor__label", { hasText: "chains" })).toHaveText(/^Open · chains R2 · \d+ min$/);
   await expect(route.locator(".ds-corridor__summary")).toContainText("chains R2 from Mill Creek to Tamarack");
   await expect(route.locator(".ds-corridor__summary")).not.toContainText("unavailable");
+  // Without checkpoints there is no extent: nothing is drawn on the strip or the map.
   await expect(page.locator(".roads-chain-band")).toHaveCount(0);
-  await expect(route.locator(".roads-key--band")).toHaveCount(0); // no band, so no key for one
-  // A road that lists none says nothing, and is not called unknown.
+  await expect(route.locator(".roads-key--band")).toHaveCount(0);
+  const features = await page.locator("#roads-map sierra-geo-map").evaluate((el: any) => el.data.features.map((f: any) => f.properties.kind));
+  expect(features).not.toContain("chain-stretch");
+  // The failure is still said, and a road that lists none says nothing and is not called unknown.
+  await expect(page.locator(".callout")).toContainText("chain controls and closure points");
   await expect(page.locator(".roads-route").filter({ hasText: "Hwy 49" }).locator(".ds-corridor__summary")).not.toContainText(/chain/i);
+});
+
+test("a section too short for its text gets a shorter one that keeps the chain level, never a cut one", async ({ page }) => {
+  // R3 on Angels Camp to Murphys, the shortest section: 13 km of the strip.
+  const short = (p: Page) => hwy4(p).locator(".ds-corridor__label").first();
+  const cut = (p: Page) => hwy4(p).locator(".ds-corridor__label", { hasText: /chains/i }).evaluateAll((els) => els.filter((el) => el.scrollWidth > el.clientWidth).map((el) => el.textContent));
+  await roads(page, [requirement("R3", 0, 1, LOW)], [requirement("R3", 0, 1, LOW)], "road:hwy4-angels-murphys");
+  // Wide: all of it.
+  await expect(short(page)).toHaveText(/^Open · chains R3 · \d+ min$/);
+  expect(await cut(page)).toEqual([]);
+  // A 900 px window: the section is about 90 px of the strip.
+  await page.setViewportSize({ width: 900, height: 900 });
+  await expect(short(page)).toHaveText("Chains R3");
+  expect(await cut(page)).toEqual([]);
+  // A small phone, where the strip runs down the page: the minutes go, the level stays.
+  await page.setViewportSize({ width: 320, height: 700 });
+  await expect(short(page)).toHaveText(/^(Open · chains R3|Chains R3)$/);
+  expect(await cut(page)).toEqual([]);
+  // And back: the full text returns when there is room.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(short(page)).toHaveText(/^Open · chains R3 · \d+ min$/);
+  // The untouched sections keep their one text.
+  await expect(hwy4(page).locator(".ds-corridor__label").nth(1)).toHaveText(/^Open · \d+ min$/);
 });

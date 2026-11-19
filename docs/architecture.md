@@ -197,6 +197,18 @@ so its MapLibre worker import is transformed normally.
   section's words come from that list; only when it is absent are they read
   from where the checkpoints lie. The band's extent is always the
   checkpoints': the API gives no distances along a road.
+- A requirement a road lists that the chain-control layer gives no stretch
+  for (the layer could not be read, or the two were read minutes apart) is
+  still the page's answer: the title (in the API's headline for the
+  stretch), the "Chain controls" figure, the section and the route's summary
+  all say it (`chainsOnRoute`, `chainFigure`), and no band or casing is
+  drawn, there being no checkpoints to place.
+- A section's text is chosen to fit (`sectionLabels`, `fitLabel`,
+  `labelRoom`): the strips' width is measured, and where a text with chains
+  in it does not fit, the minutes go, then the status word, so the level is
+  not what the component's ellipsis cuts. Across the page the room is the
+  section's share of the strip; for the vertical strip it is an estimate of
+  the corridor's label column.
 - The band beside a route's strip is Grid's composition on the strip's scale;
   the design system's `corridor()` has no band of its own. Where the strip
   turns vertical (narrow screens) there is no shared axis, so no band is

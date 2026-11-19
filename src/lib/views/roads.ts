@@ -11,7 +11,7 @@ import { stateUrl } from "../state";
 import { regionTimeZone } from "../time";
 import { ageText } from "../mesh-fleet";
 import {
-  alongRoute, beyondClosures, beyondLabel, beyondText, chainBands, chainCheckpoints, chainExtent, chainRead, chainStretch, closureNotice, roadsAnswer, routeChainNote, routeChains, routeSlice, sectionChains, segmentName, severityRankOf, severityTone, signBoard, workJobs, workName,
+  alongRoute, beyondClosures, beyondLabel, beyondText, chainBands, chainCheckpoints, chainFigure, chainExtent, chainRead, chainStretch, closureNotice, fitLabel, labelRoom, roadsAnswer, routeChainNote, routeChains, routeSlice, sectionChains, sectionLabels, segmentName, severityRankOf, severityTone, signBoard, workJobs, workName,
   type Chain, type ChainBand, type ChainControl, type ChainRead, type Position, type Segment, type Sign, type WorkWindow,
 } from "../road-corridor";
 import { createStore, region } from "@sierragridteam/design-system/lib/region";
@@ -45,6 +45,8 @@ type State = {
   chainRead: ChainRead;
   chp?: { status: string; lastSuccessAt?: string | null };
   loaded: boolean; errors: string[]; stale: string[]; updatedAt: number; now: number;
+  /** The route strips' width and the root font size (px), measured: what a section's text has room for. 0 until measured. */
+  strip: { width: number; rem: number };
 };
 
 const ms = (v?: string | null) => (v ? Date.parse(v) : NaN);
@@ -79,7 +81,7 @@ export async function mount(ctx: Context) {
   const { client, state, $, signal } = ctx;
   const recordUrl = (id: string) => stateUrl({ ...state, topic: "events", layer: "ROAD_INCIDENT", record: id, revision: "", compare: "", autoSelect: true, timeExplicit: false } as any);
   const eventsUrl = stateUrl({ ...state, topic: "events", layer: "ROAD_INCIDENT", record: "", timeExplicit: false } as any);
-  const store = createStore<State>({ segments: [], closures: [], chains: [], chainRead: "current", signs: [], events: [], loaded: false, errors: [], stale: [], updatedAt: 0, now: Date.now(), record: { state: "loading" }, recordFrom: 0 });
+  const store = createStore<State>({ segments: [], closures: [], chains: [], chainRead: "current", signs: [], events: [], loaded: false, errors: [], stale: [], updatedAt: 0, now: Date.now(), record: { state: "loading" }, recordFrom: 0, strip: { width: 0, rem: 16 } });
 
   async function load() {
     const [segments, closures, signs, events, cameras, sources] = await Promise.allSettled([
@@ -153,8 +155,15 @@ export async function mount(ctx: Context) {
   }
   const anyRecordUrl = (id: string) => stateUrl({ ...state, topic: "events", layer: "ALL", eventStatus: "all", record: id, revision: "", compare: "", autoSelect: true, timeExplicit: false } as any);
 
-  $("content").innerHTML = `<div id="roads-page"></div>`;
+  $("content").innerHTML = `<div id="roads-page"></div><span class="roads-label-probe" aria-hidden="true"></span>`;
   let map: SierraGeoMap | undefined;
+  // How wide a section's text is, in the strip's own type: asked of a hidden element of ours, and remembered.
+  const probe = $("content").querySelector<HTMLElement>(".roads-label-probe")!;
+  const widths = new Map<string, number>();
+  const textWidth = (text: string) => {
+    if (!widths.has(text)) { probe.textContent = text; widths.set(text, probe.getBoundingClientRect().width); }
+    return widths.get(text)!;
+  };
 
   region($("roads-page"), store, (s) => {
     const chains = routeChains(s.segments);
@@ -171,12 +180,11 @@ export async function mount(ctx: Context) {
     const delay = s.segments.reduce((sum, x) => sum + (x.delayMinutes ?? 0), 0);
     const answer = roadsAnswer(chains, { segments: s.segments, controls: s.chains, activeWork: s.events.filter((e) => e.status === "ACTIVE" && e.roadIncident?.closure).length });
     // A strip can run past its route (a closed stub beyond the last stop), so the shared scale comes from the strips.
-    const strips = chains.map((c) => strip(c, s, work, recordUrl));
-    const scale = Math.max(...strips.map((x) => x.length));
-    const stretches = chains.flatMap((c) => chainStretch(c, s.chains) ?? []);
-    // Requirements on highways that are not monitored routes here: named, never counted as "none".
-    const nearby = [...new Set(s.chains.filter((x) => x.level).map((x) => x.highway.replace(/^Highway /, "Hwy ")))].filter((h) => !stretches.some((x) => x.route === h));
-    const chainsUnknown = s.chainRead === "unknown";
+    // A strip can be shorter than the scale they share, so the texts are fitted once the scale is known.
+    const drafts = chains.map((c) => strip(c, s, work, recordUrl));
+    const scale = Math.max(...drafts.map((x) => x.length));
+    const strips = drafts.map((x) => ({ ...x, sections: x.sections.map(({ labels, ...section }) => ({ ...section, label: fitLabel(labels, labelRoom(s.strip, section, scale), textWidth) })) }));
+    const figure = chainFigure(chains, s.chains, s.chainRead);
     const reportsUnknown = s.errors.includes("road reports") && !s.events.length;
     const past = chains.flatMap((c) => beyondClosures(c).map((b) => beyondText(b)));
     return html`
@@ -185,8 +193,12 @@ export async function mount(ctx: Context) {
       ${s.stale.length ? html`<p class="callout">The source is behind for: ${s.stale.join(", ")}. Treat those parts as last known, not current.</p>` : nothing}
       <div class="stats stats--compact roads-kpis">
         ${stat({ label: "Routes open", value: s.segments.length ? `${open.length} of ${s.segments.length}` : "—", sub: closed.length ? `closure notice: ${closed.map((x) => { const n = segmentName(x.headline); return `${n.route} ${n.from}–${n.to}`; }).join(", ")}` : past.length ? past.join("; ") : "monitored sections" })}
-        ${stat({ label: "Chain controls", value: chainsUnknown ? "—" : s.segments.length || s.chains.length ? (stretches.length ? [...new Set(stretches.flatMap((x) => x.levels))].sort().join(", ") : "None") : "—",
-          sub: stretches.length ? stretches.map((x) => `${x.where}${Number.isFinite(x.since) ? ` · since ${fmt(x.since)}` : ""}`).join("; ") : chainsUnknown ? "chain control status is unavailable" : nearby.length ? `none on monitored routes · ${nearby.join(", ")} nearby` : "no chain requirements" })}
+        ${stat({ label: "Chain controls", value: figure.state === "required" ? figure.levels.join(", ") : figure.state === "unknown" || !(s.segments.length || s.chains.length) ? "—" : "None",
+          sub: figure.state === "required" ? figure.items.map((x) => `${x.where}${Number.isFinite(x.since) ? ` · since ${fmt(x.since)}` : ""}`).join("; ")
+            : figure.state === "unknown" ? "chain control status is unavailable"
+            // The road layer speaks for the monitored routes only; the chain-control layer, which covers the rest, was not read.
+            : figure.state === "none-listed" ? "none on monitored routes · other highways not known"
+            : figure.nearby.length ? `none on monitored routes · ${figure.nearby.join(", ")} nearby` : "no chain requirements" })}
         ${stat({ label: "Delay on routes", value: s.segments.length ? minutes(delay) : "—", sub: delay ? "reported across monitored sections" : "traffic is moving freely" })}
         ${stat({ label: "Work zones now", value: reportsUnknown ? "—" : String(activeWork.length), sub: reportsUnknown ? "road reports are unavailable" : activeWork.length ? `lane closures on ${[...new Set(activeWork.map((w) => /^(Hwy \d+)/.exec(w.headline)?.[1] ?? "the corridor"))].join(" and ")}` : "no lane closures in place" })}
         ${stat({ label: "Planned work · 7 days", value: String(jobs.filter((j) => j.windows.some((w) => w.status !== "ACTIVE")).length), sub: upcoming.length ? `${upcoming.length} windows · next ${fmt(Math.min(...upcoming.map((w) => w.start)))}` : "nothing scheduled" })}
@@ -229,6 +241,23 @@ export async function mount(ctx: Context) {
       </div>
       <p class="meta roads-footnote" data-page-updated>Route status, travel times, closure points, signs and lane closures from Caltrans; traffic incidents from CHP. Section status is attached by the source to the whole section; a closure notice may cover only part of it. Updated ${s.updatedAt ? fmt(s.updatedAt) : "—"}, refreshing every 2 minutes.</p>`;
   }, { signal });
+
+  // The strips' width, kept current: the page renders again when it changes, with the texts that fit.
+  const measured = new ResizeObserver(([entry]) => {
+    const width = Math.round(entry.contentRect.width), rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const now = store.get().strip;
+    if (width !== now.width || rem !== now.rem) store.set({ strip: { width, rem } });
+  });
+  let measuring: Element | undefined;
+  store.subscribe(() => {
+    const strips = document.querySelector(".roads-strips") ?? undefined;
+    if (strips === measuring) return;
+    measured.disconnect();
+    if ((measuring = strips)) measured.observe(strips);
+  }, { signal });
+  signal.addEventListener("abort", () => measured.disconnect());
+  // Texts measured before the web font arrived are measured again.
+  void document.fonts?.ready.then(() => { if (!signal.aborted && widths.size) { widths.clear(); store.set({ now: Date.now() }); } });
 
   // The map is built once and updated in place; the selection is kept by feature id.
   let lastKey = "", selectedId: string | undefined;
@@ -363,7 +392,7 @@ function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) =
       from, to, tone,
       // The source attaches a closure to the whole section; hatch it so the strip does not claim all of it is shut.
       partial: segment.status === "CLOSED",
-      label: [word, segment.status === "CLOSED" ? n?.reason : undefined, chains?.label, segment.status === "CLOSED" ? undefined : `${minutes(segment.durationMinutes)}${(segment.delayMinutes ?? 0) > 0 ? ` +${segment.delayMinutes}` : ""}`].filter(Boolean).join(" · "),
+      labels: sectionLabels({ status: word, closed: segment.status === "CLOSED", reason: n?.reason, chains: chains?.label, time: `${minutes(segment.durationMinutes)}${(segment.delayMinutes ?? 0) > 0 ? ` +${segment.delayMinutes}` : ""}` }),
       detail: [chains ? `${word}, ${chains.text}` : undefined, segment.description || segment.statusCauses?.[0]?.description || `${segment.headline}: ${minutes(segment.durationMinutes)} for ${segment.distanceKm ?? "—"} km`, sinceText(segment)].filter(Boolean).join(" · "),
     };
   });
@@ -373,7 +402,7 @@ function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) =
     summaryTone: (closed ? "alarm" : !beyond || beyond.tone === "muted" ? "ok" : beyond.tone) as StateTone,
     length: c.length + stub,
     stops: beyond ? [...c.stops, { at: c.length + stub, label: beyond.toward ?? "Closed" }] : c.stops,
-    sections: beyond ? [...sections, { from: c.length, to: c.length + stub, tone: beyond.tone as StateTone, partial: true, label: beyondLabel(beyond), detail: `${beyond.name}. ${beyond.description ?? ""} Not to scale.`.trim() }] : sections,
+    sections: beyond ? [...sections, { from: c.length, to: c.length + stub, tone: beyond.tone as StateTone, partial: true, labels: [beyondLabel(beyond)], detail: `${beyond.name}. ${beyond.description ?? ""} Not to scale.`.trim() }] : sections,
     markers,
     bands,
   };

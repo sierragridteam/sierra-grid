@@ -24,6 +24,8 @@
 .roads-key { display: inline-block; flex: none; background: var(--key); }
 .roads-key--line { width: 1.25rem; height: 4px; border-radius: 2px; }
 .roads-key--dot, .roads-dot { width: 0.65rem; height: 0.65rem; border-radius: 50%; }
+/* Measures a section's text in the strip's type (the corridor's own label size), to choose one that fits. Never seen. */
+.roads-label-probe { position: absolute; visibility: hidden; pointer-events: none; white-space: nowrap; font-size: var(--fs-small); font-variant-numeric: tabular-nums; }
 /* A route's line with the chain-control casing around it, as the map draws it. */
 .roads-key--chains { width: 1.25rem; height: 4px; margin: 3px; border-radius: 2px; background: var(--state-ok); box-shadow: 0 0 0 3px color-mix(in oklab, var(--chart-glacier) 55%, transparent); }
 /* Chain control on a route. In its summary: the words, keyed with the band's colour. */
