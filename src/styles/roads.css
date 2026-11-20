@@ -145,6 +145,7 @@
 /* Source health and Scanner feeds. */
 .sources-kpis, .sources-attention, .sources-history { margin-bottom: var(--space-4); }
 .sources-since { display: block; }
+.sources-since time { white-space: nowrap; }
 .sources-changes { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
 .sources-changes li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
 .sources-own { margin: var(--space-3) 0 0; }
@@ -154,8 +155,9 @@
 .sources-problem__title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .sources-error { font-family: var(--font-mono); font-size: var(--fs-small); overflow-wrap: anywhere; }
 .sources-by { display: block; font-weight: 400; }
-.sources-clock { white-space: nowrap; }
-@media (max-width: 600px) { .sources-clock { display: inline; } }
+.sources-clock { display: block; }
+/* Desktop: every fact column holds its line (a status, a time, an interval); the source's name takes the wrapping. */
+@media (min-width: 601px) { .sources-table td { white-space: nowrap; } }
 .sources-group th { padding-top: var(--space-4); font-size: var(--fs-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-secondary); background: none; }
 .sources-footnote, .scanners-footnote { margin-top: var(--space-4); max-width: 85ch; }
 .scanners-feed { --span: 6; }
