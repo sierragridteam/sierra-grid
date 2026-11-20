@@ -104,7 +104,7 @@ test("the relay section says whether each gateway is up and which radios each re
  * The style is a plain ground, answered here: what is tested is the page's
  * layout and the map's gestures, and the real basemap's tiles are a third
  * party's (when its style takes over five seconds the map says "Geometry
- * only" in a line of its own, rightly, and is a line taller).
+ * only" in a note over the canvas, which is not what is tested here).
  */
 async function roadsMap(page: Page) {
   const gate = () => { let open!: () => void; const held = new Promise<void>(resolve => { open = resolve; }); return { held, open }; };
@@ -156,11 +156,8 @@ test("a page-sized map stands where its placeholder stood, and zooms with Ctrl +
 });
 
 test("a page-sized map does not move the page while it loads", async ({ page }) => {
-  // It does today, and this is the design system's to fix: from the moment the map element is on the page until
-  // MapLibre has loaded, <sierra-geo-map> shows "Loading map." in a line of its own under the canvas (49px), so
-  // everything below the map drops by a line and comes back. Remove this annotation with the release that draws
-  // that line over the canvas (or otherwise outside the flow); the test then passes as written.
-  test.fail(true, "design system: the map's \"Loading map.\" line takes a line of its own until the map has loaded");
+  // The map's "Loading map." line is a note over the canvas (design system 0.9.11). Before that it took a line of
+  // its own under the canvas until MapLibre had loaded, 49px, and everything below the map dropped and came back.
   const { slot, height, routes, loaded } = await roadsMap(page);
   await expect(slot.locator("sierra-geo-map")).toHaveCount(0);
   const reserved = await height();
