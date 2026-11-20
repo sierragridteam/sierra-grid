@@ -14,6 +14,20 @@ export function fromApi(route: Route) {
   return route.fetch(origin() ? { url: origin() + url.pathname + url.search } : {});
 }
 
+/**
+ * Answer a routed request with the API's own answer, changed: how a test fixes
+ * the one thing it is about while the rest stays what the API says today. A
+ * request the page has already dropped is let go.
+ */
+export const answer = (change: (body: any) => any) => async (route: Route) => {
+  try {
+    const response = await fromApi(route);
+    await route.fulfill({ response, json: change(await response.json()) });
+  } catch {
+    await route.abort().catch(() => {});
+  }
+};
+
 export async function useApiOrigin(page: Page) {
   if (!origin()) return;
   await page.route("https://data.sierragridteam.org/**", async route => {

@@ -1,6 +1,6 @@
-import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { fromApi } from "./api-origin";
+import { answer } from "./api-origin";
 
 /**
  * Chain control on the Roads page. The routes are the API's own (their lines
@@ -28,16 +28,6 @@ function requirement(level: string, first: number, last: number, all = GATES) {
     },
   };
 }
-
-/** Answer a routed request with the API's own answer, changed; a request the page has already dropped is let go. */
-const answer = (change: (body: any) => any) => async (route: Route) => {
-  try {
-    const response = await fromApi(route);
-    await route.fulfill({ response, json: change(await response.json()) });
-  } catch {
-    await route.abort().catch(() => {});
-  }
-};
 
 /** `chains` is the chain-control layer ("fail": the request fails); `listed` is what the roads themselves list (default: the same; "unknown": nothing), on `road`. */
 async function roads(page: Page, chains: "fail" | ReturnType<typeof requirement>[], listed: "unknown" | ReturnType<typeof requirement>[] = chains === "fail" ? "unknown" : chains, road = "road:hwy4-arnold-bearvalley") {

@@ -11,16 +11,20 @@ import { telemetryMetrics, telemetrySeries, type TelemetryMetric } from "./mesh-
 import { data, makeContext, type Context } from "./context";
 import { fmt } from "./render";
 import { stateUrl } from "./state";
-import { humanize, identifierList, isReading, reportChanges, reportFields, reportTitle, typeLabel, type Report, type Revision } from "./event-model";
+import { changeValues, humanize, identifierList, isReading, reportChanges, reportFields, reportTitle, typeLabel, type Report, type Revision } from "./event-model";
 export { identifierList };
 
 export const severityTone = (value: string) => ["SEVERE", "EXTREME"].includes(value) ? "alarm" as const : value === "MODERATE" ? "elevated" as const : "muted" as const;
 const displayValue = (value: string) => /^\d{4}-\d\d-\d\dT/.test(value) ? fmt(value) : value;
-const changeValue = (value: string) => identifierList(value) ?? displayValue(value);
+/** One side of a change: a list stays a list (the diff draws its entries as identifier pills), text is formatted. */
+const changeSide = (value: string | string[]) => (typeof value === "string" ? displayValue(value) : value);
 const diffProps = (revision: Revision, previous: Revision): DataDiffProps => ({
   label: `Update ${revision.revision} · ${fmt(revision.observedAt || revision.ingestedAt)}`,
   count: false,
-  changes: reportChanges(previous.event, revision.event).map(change => ({ path: change.label.replace(/^(Metadata|Properties|Attributes) · /i, ""), kind: change.kind as "added" | "removed" | "changed", before: changeValue(change.before), after: changeValue(change.after) })),
+  changes: reportChanges(previous.event, revision.event).map(change => {
+    const sides = changeValues(change);
+    return { path: change.label.replace(/^(Metadata|Properties|Attributes) · /i, ""), kind: change.kind as "added" | "removed" | "changed", before: changeSide(sides.before), after: changeSide(sides.after) };
+  }),
 });
 const factItem = ([label, value]: [string, string]): PropertyItem => {
   const ids = identifierList(value);

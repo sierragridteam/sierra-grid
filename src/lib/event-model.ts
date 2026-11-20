@@ -143,10 +143,29 @@ export function reportChanges(before: Report, after: Report) {
  * run of 64-character hashes. A lone hash is a list of one. A list counts
  * when any entry is a hash: gateway lists mix key hashes with reporter names
  * ("relay"), and requiring every entry to be a hash sent exactly those lists
- * to the page as raw text.
+ * to the page as raw text. A run of digits alone is a count (a node's
+ * airtime in milliseconds, "18772000"), not a hash.
  */
 export function identifierList(value: string): string[] | undefined {
   const parts = value.split(/\s*,\s*/).filter(Boolean);
-  const hash = (part: string) => /^[0-9a-f]{8,}$/i.test(part);
+  const hash = (part: string) => /^[0-9a-f]{8,}$/i.test(part) && /[a-f]/i.test(part);
   return parts.length && parts.some(hash) ? parts : undefined;
+}
+
+/**
+ * Both sides of one change, for the list of what changed. When either side is
+ * a list of identifiers the field is a list, so the other side is one too: a
+ * gateway list that goes from key hashes to the relay's name alone ("relay"),
+ * or back, used to be a list on one side and text on the other, which printed
+ * the list whole, every 64-character key of it. A side the report did not
+ * have ("Not supplied") is the empty list.
+ */
+export function changeValues(change: { kind: string; before: string; after: string }): { before: string | string[]; after: string | string[] } {
+  const before = identifierList(change.before), after = identifierList(change.after);
+  if (!before && !after) return { before: change.before, after: change.after };
+  const entries = (value: string) => value.split(/\s*,\s*/).filter(Boolean);
+  return {
+    before: before ?? (change.kind === "added" ? [] : entries(change.before)),
+    after: after ?? (change.kind === "removed" ? [] : entries(change.after)),
+  };
 }
