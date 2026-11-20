@@ -159,3 +159,12 @@ test("a severe standing condition counts in 'N are severe', so the sentence and 
   assert.equal(headlineCounts(events, false, undefined, [ev("ROAD_SEGMENT", "STATE", "SEVERE", "EXPIRED")]).second, "2 are severe.", "a standing report that has ended does not count");
   assert.equal(headlineCounts(events, false, undefined, [ev("ROAD_SEGMENT", "STATE", "EXTREME")]).second, "1 is extreme.");
 });
+
+test("a feed's health report lists its error once among the changes, not also as its text", () => {
+  const error = "failed to fetch road conditions: connection reset by peer";
+  const health = (status, err) => ({ id: "source:roads", layer: "SOURCE_HEALTH", status: "ACTIVE", severity: "INFO", headline: `Roads: ${status}`, description: err, provenance: {}, sourceHealth: { sourceId: "roads", status, since: "2026-11-20T11:51:53Z", error: err } });
+  const changes = reportChanges(health("OK", ""), health("STALE", error));
+  assert.deepEqual(changes.filter((c) => c.after === error).map((c) => c.label), ["Error"]);
+  // Text that is not the error is still the original report.
+  assert.ok(reportChanges(health("OK", ""), { ...health("STALE", error), description: "Upstream note" }).some((c) => c.label === "Original report"));
+});
