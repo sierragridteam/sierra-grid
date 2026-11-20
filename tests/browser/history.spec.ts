@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { useApiOrigin } from "./api-origin";
+import { answer, useApiOrigin } from "./api-origin";
 const ready = async (page: import("@playwright/test").Page) => expect(page.locator("#content")).toHaveAttribute("aria-busy", "false", { timeout: 45000 });
 test.beforeEach(async ({ page }) => { await useApiOrigin(page); });
 
@@ -145,18 +145,39 @@ test("a late detail response cannot replace a newer selection", async ({ page })
   } finally { release(); await completed; }
 });
 
-test("a selected report uses the DS record header, property list and close link", async ({ page }) => {
+test("a selected report uses the DS record header, property list and close link, and gateway keys are identifier pills in its details and in what changed", async ({ page }) => {
+  // What the first mesh report holds today is not the test's to depend on: every node is given the same
+  // gateways, and every history the same three revisions, each the API's own with only the gateways set.
+  // Revision 2 is the case that printed raw keys: a list of key hashes and the relay's name that becomes the name alone.
+  const k1 = "0B0B037985E4980662D3E7862D35AEBB4A01642EECA2EEE561C5065D05C9ACF5", k2 = "0F0F038DE5FD9631E7C6E6DE50844A69E489DD94681640BB92ED8F1C177FFC13", k3 = "131248EED2B265E7C3D7E0FB50554699114E5C6317B6252A4E735EA9269D498E";
+  const heardBy = (event: any, gateways: string[]) => ({ ...event, mesh: { ...event.mesh, telemetry: { ...event.mesh?.telemetry, gateways } } });
+  await page.route(url => url.pathname === "/api/v1/events" && url.searchParams.get("layer") === "MESH", answer(body => ({ ...body, events: body.events.map((e: any) => heardBy(e, [k1, k3])) })));
+  await page.route(url => /^\/api\/v1\/events\/[^/]+\/history$/.test(url.pathname), answer(body => {
+    const saved = body.revisions[0];
+    return { ...body, nextPageToken: "", revisions: [[k1, k3], ["relay"], [k1, k2, "relay"]].map((gateways, i) => ({ ...saved, kind: "CHANGE", revision: 3 - i, event: heardBy(saved.event, gateways) })) };
+  }));
   await page.goto("/events/?layer=MESH"); await ready(page);
   const detail = page.locator("#browser-detail");
   await expect(detail.locator(".record-header .record-header__title")).toBeVisible();
   await expect(detail.locator(".ds-properties").first()).toBeVisible();
   // Gateway hash lists render as six-character identifier pills, never a raw comma blob.
-  const pills = detail.locator(".ds-property .ds-id-pills code");
-  if (await pills.count()) {
-    expect((await pills.first().textContent())!.length).toBe(6);
-    expect((await pills.first().getAttribute("title"))!.length).toBeGreaterThan(6);
-  }
-  await expect(detail).not.toContainText(/[0-9a-f]{16,},\s*[0-9a-f]{16,}/i);
+  const pills = detail.locator(".ds-property").filter({ hasText: "Gateways" }).locator(".ds-id-pills code");
+  await expect(pills).toHaveText([k1.slice(0, 6), k3.slice(0, 6)]);
+  await expect(pills.first()).toHaveAttribute("title", k1);
+  // What changed: entries that left and joined as pills, with the whole key in the title; the entry that stayed is counted.
+  const changed = detail.locator("#report-versions sierra-data-diff li").filter({ has: page.locator(".ds-diff-field", { hasText: "Gateways" }) });
+  await expect(changed).toHaveCount(2, { timeout: 30000 });
+  const entries = (row: number, kind: "added" | "removed") => changed.nth(row).locator(`.ds-id-pills--diff li[data-kind="${kind}"] code`);
+  await expect(entries(0, "removed")).toHaveText(["relay"]);
+  await expect(entries(0, "added")).toHaveText([k1.slice(0, 6), k3.slice(0, 6)]);
+  await expect(entries(1, "removed")).toHaveText([k1.slice(0, 6), k2.slice(0, 6)]);
+  await expect(entries(1, "removed").first()).toHaveAttribute("title", k1);
+  await expect(entries(1, "added")).toHaveCount(0);
+  await expect(changed.nth(1).locator(".ds-diff-kept")).toHaveText("1 unchanged");
+  // No whole key is printed in what changed, in a list or alone (a JSON array of keys has no ", " between them),
+  // and no run of keys anywhere in the report (its own id, one key, is given whole at the foot).
+  await expect(detail.locator("#report-versions")).not.toContainText(/[0-9a-f]{16,}/i);
+  await expect(detail).not.toContainText(/[0-9a-f]{16,}"?,\s*"?[0-9a-f]{16,}/i);
   await expect(page.getByRole("link", { name: "Browse history" })).toHaveCount(0);
   await detail.getByRole("link", { name: "Close report", exact: true }).click(); await ready(page);
   await expect(page.locator(".browser-selection")).toBeHidden();

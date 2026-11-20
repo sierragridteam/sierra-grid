@@ -72,6 +72,28 @@ test("a list with any key hash in it is a list of identifiers, names included", 
   assert.equal(identifierList("Hwy 4, near Arnold"), undefined, "ordinary text with a comma is not a list of identifiers");
   assert.equal(identifierList("relay"), undefined);
   assert.equal(identifierList(""), undefined);
+  // A long count is a number: a node's airtime in milliseconds was drawn as a pill.
+  assert.equal(identifierList("18772000"), undefined);
+  assert.deepEqual(identifierList("12345678, 0b0b0379"), ["12345678", "0b0b0379"], "among hashes, an entry of digits is still an entry");
+});
+
+test("a change with a list of identifiers on either side is a list on both", async () => {
+  const { changeValues } = await import("../src/lib/event-model.ts");
+  const a = "0B0B037985E4980662D3E7862D35AEBB4A01642EECA2EEE561C5065D05C9ACF5", b = "0F0F038DE5FD9631E7C6E6DE50844A69E489DD94681640BB92ED8F1C177FFC13";
+  const mesh = (gateways) => ({ status: "ACTIVE", severity: "INFO", headline: "Node", mesh: { name: "Node", telemetry: { gateways } } });
+  const change = (before, after) => { const c = reportChanges(mesh(before), mesh(after)).find(c => c.label === "Telemetry · Gateways"); return c && changeValues(c); };
+  // The live case (2026-11-19): a node heard by gateways and the relay, then by the relay alone, and back.
+  assert.deepEqual(change([a, b, "relay"], ["relay"]), { before: [a, b, "relay"], after: ["relay"] });
+  assert.deepEqual(change(["relay"], [a, b]), { before: ["relay"], after: [a, b] });
+  assert.deepEqual(change([a], [a, b]), { before: [a], after: [a, b] });
+  // A side the report did not have is the empty list, not an entry called "Not supplied".
+  assert.deepEqual(change([], [a, b]), { before: [], after: [a, b] });
+  assert.deepEqual(change([a, b], []), { before: [a, b], after: [] });
+  // No side is ever the keys as one text.
+  for (const sides of [change([a, b, "relay"], ["relay"]), change(["relay"], [a, b])]) for (const side of Object.values(sides)) assert.ok(Array.isArray(side));
+  // Ordinary text stays text, commas and all.
+  assert.deepEqual(changeValues({ kind: "changed", before: "Hwy 4, near Arnold", after: "Hwy 4, near Dorrington" }), { before: "Hwy 4, near Arnold", after: "Hwy 4, near Dorrington" });
+  assert.deepEqual(changeValues({ kind: "added", before: "Not supplied", after: "relay" }), { before: "Not supplied", after: "relay" });
 });
 
 test("what is an event is the API's word (nature); an API without it falls back to 'everything but mesh nodes'", () => {

@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+import { answer } from "./api-origin";
 const ready = async (page: import("@playwright/test").Page) => expect(page.locator("#content")).toHaveAttribute("aria-busy", "false", { timeout: 30000 });
 
 test("a mesh directory row opens the node report with its measurements in the sidebar", async ({ page }) => {
@@ -92,25 +93,79 @@ test("the relay section says whether each gateway is up and which radios each re
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
 });
 
-test("a page-sized map holds its place before it loads, and zooms with Ctrl + wheel while a plain wheel scrolls the page", async ({ page }) => {
-  await page.route("**/styles/positron*", async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
+/**
+ * The Roads page with its map held at a known moment. `routes` holds the road
+ * layer, without which the page mounts no map: until it is let through, the
+ * slot is the empty placeholder. `basemap` holds the map's style, without
+ * which the map element is on the page and still says "Loading map.".
+ * Moments are held and let go, not timed: the test measured after fixed waits
+ * before, and what it measured depended on how fast the page loaded.
+ *
+ * The style is a plain ground, answered here: what is tested is the page's
+ * layout and the map's gestures, and the real basemap's tiles are a third
+ * party's (when its style takes over five seconds the map says "Geometry
+ * only" in a note over the canvas, which is not what is tested here).
+ */
+async function roadsMap(page: Page) {
+  const gate = () => { let open!: () => void; const held = new Promise<void>(resolve => { open = resolve; }); return { held, open }; };
+  const routes = gate(), basemap = gate();
+  const ground = { version: 8, sources: {}, layers: [{ id: "ground", type: "background", paint: { "background-color": "#e9e4d8" } }] };
+  await page.route(url => url.pathname.endsWith("/map/road_segment.geojson"), async route => { await routes.held; await answer(body => body)(route); });
+  await page.route("**/styles/positron*", async route => { await basemap.held; await route.fulfill({ json: ground, headers: { "access-control-allow-origin": "*" } }).catch(() => {}); });
   await page.goto("/roads/", { waitUntil: "domcontentloaded" });
   const slot = page.locator("#roads-map");
   await slot.waitFor({ state: "attached" });
-  const reserved = (await slot.boundingBox())!.height;
+  const height = async () => (await slot.boundingBox())!.height;
+  /**
+   * Loaded: the map is built and its "Loading map." line is gone, which the element does in the same step as
+   * fitting the routes. (MapLibre's own `loaded()` is no use here: a map with moving dashes is always drawing.)
+   */
+  const loaded = async () => {
+    routes.open(); basemap.open();
+    await expect(slot.locator(".maplibregl-canvas")).toBeVisible({ timeout: 30000 });
+    await expect(slot.locator("sierra-geo-map [role=status]").first()).toBeHidden({ timeout: 30000 });
+  };
+  return { slot, height, routes, basemap, loaded };
+}
+
+test("a page-sized map stands where its placeholder stood, and zooms with Ctrl + wheel while a plain wheel scrolls the page", async ({ page }) => {
+  const { slot, height, loaded } = await roadsMap(page);
+  // Before the routes arrive there is no map, only the room kept for it.
+  await expect(slot.locator("sierra-geo-map")).toHaveCount(0);
+  const reserved = await height();
   expect(reserved).toBeGreaterThan(400);
-  await expect(slot.locator("canvas").first()).toBeVisible({ timeout: 30000 });
-  await page.waitForTimeout(1500);
-  expect(Math.abs((await slot.boundingBox())!.height - reserved)).toBeLessThan(12);
+  await loaded();
+  expect(Math.abs(await height() - reserved)).toBeLessThan(2);
   const canvas = slot.locator(".maplibregl-canvas");
-  await canvas.scrollIntoViewIfNeeded();
-  const box = (await canvas.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  const zoom = () => page.locator("#roads-map sierra-geo-map").evaluate((el: any) => el.map.getZoom());
+  const overMap = async () => {
+    await canvas.scrollIntoViewIfNeeded();
+    const box = (await canvas.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  };
+  // Read once the map has fitted its routes: before that the zoom is the map's starting one, and the fit changes it.
+  const zoom = () => slot.locator("sierra-geo-map").evaluate((el: any) => el.map.getZoom());
+  await overMap();
   const z0 = await zoom(), y0 = await page.evaluate(() => scrollY);
-  await page.mouse.wheel(0, 240); await page.waitForTimeout(600);
+  await page.mouse.wheel(0, 240);
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(y0);
   expect(await zoom()).toBe(z0);
-  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(y0);
-  await page.keyboard.down("Control"); await page.mouse.wheel(0, -400); await page.waitForTimeout(1200); await page.keyboard.up("Control");
-  expect(await zoom()).toBeGreaterThan(z0);
+  await overMap();
+  await page.keyboard.down("Control"); await page.mouse.wheel(0, -400);
+  await expect.poll(zoom).toBeGreaterThan(z0);
+  await page.keyboard.up("Control");
+});
+
+test("a page-sized map does not move the page while it loads", async ({ page }) => {
+  // The map's "Loading map." line is a note over the canvas (design system 0.9.11). Before that it took a line of
+  // its own under the canvas until MapLibre had loaded, 49px, and everything below the map dropped and came back.
+  const { slot, height, routes, loaded } = await roadsMap(page);
+  await expect(slot.locator("sierra-geo-map")).toHaveCount(0);
+  const reserved = await height();
+  // The map element is on the page and its basemap has not answered: the longest a reader waits on a slow connection.
+  routes.open();
+  await expect(slot.locator("sierra-geo-map [role=status]").first()).toHaveText("Loading map.", { timeout: 30000 });
+  const loading = await height();
+  await loaded();
+  expect(Math.abs(await height() - reserved)).toBeLessThan(2);
+  expect(Math.abs(loading - reserved)).toBeLessThan(2);
 });
