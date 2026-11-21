@@ -113,7 +113,8 @@ export function reportFields(report: Report): Record<string, string> {
   };
   add("Status", humanize(report.status)); add("Severity", humanize(report.severity));
   add("Headline", report.headline); add("Summary", report.summary); add("Area", report.areaLabel);
-  add("Original report", report.description);
+  // A feed's health report carries its error as its text as well: one change, listed once (as Error).
+  if (!report.description || report.description.trim() !== report.sourceHealth?.error?.trim()) add("Original report", report.description);
   const detail = report.wildfire || report.power || report.evacuation || report.weatherAlert || report.earthquake || report.roadIncident || report.burnStatus || report.mesh
     || report.chainControl || report.roadSegment || report.sourceHealth;
   const labels: Record<string, string> = { acres: "Area (acres)", containment: "Containment (%)", depthKm: "Depth (km)", customersAffected: "Customers affected", estimatedRestoration: "Estimated restoration", plannedStart: "Planned start", plannedEnd: "Planned end", areaDesc: "Affected area", permission: "Burn permission", calfireObservedAt: "CAL FIRE report time" };

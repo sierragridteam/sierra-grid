@@ -91,7 +91,8 @@ export async function mount(ctx: Context) {
     const lines = bad.slice(0, 3).map((x) => `${x.name} is ${word(x.status).toLowerCase()}${Number.isFinite(ms(x.lastSuccessAt)) ? `, last good ${since(ms(x.lastSuccessAt), s.now)} ago` : ", never read"}`);
     const fresh = (x: Source) => {
       const last = ms(x.lastSuccessAt);
-      return Number.isFinite(last) ? html`${since(last, s.now)} ago<span class="meta sources-clock"> · ${fmt(last)}</span>` : "Never";
+      // Two short lines, as the Status cell beside it: how long ago, then the clock time.
+      return Number.isFinite(last) ? html`${since(last, s.now)} ago<span class="meta sources-clock">${fmt(last)}</span>` : "Never";
     };
     // Since when it has held this status, from its health report; shown only when that agrees with the
     // status now. A report never revised says when recording began, which is all that is then claimed.

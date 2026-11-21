@@ -107,13 +107,13 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
     const versionsLink = html`<a href="#report-versions" @click=${(event: MouseEvent) => { event.preventDefault(); host.querySelector("#report-versions")?.scrollIntoView({ block: "start" }); }}>${ordered.length === 1 ? "1 version" : `${ordered.length} versions`}</a>`;
     // Known only when revision 1 is loaded: the oldest loaded revision of a longer history is not the first save.
     const savedFirst = firstSaved(s.revisions, report);
-    const original = report.description || profile?.original?.text || "", long = original.length > 320;
+    const original = profile?.originalNote ? "" : report.description || profile?.original?.text || "", long = original.length > 320;
     const fullOriginal = report.description ? undefined : profile?.original?.full;
     const raw = (summary: string) => html`<details class="report-original"><summary>${summary}</summary><p class="report-quote report-quote--long">${original}</p></details>`;
     // The source's own words, as published; long bulletins fold after a preview.
     const originalCard = block("Original report", html`${original
       ? long ? html`<p class="report-quote report-quote--long">${original.slice(0, 280).trimEnd()}…</p>${raw("Show full report")}` : html`<p class="report-quote">${original}</p>`
-      : html`<p class="meta">The source supplied no narrative.</p>`}${fullOriginal ? html`<details class="report-original"><summary>Call transcript</summary><p class="report-quote report-quote--long">${fullOriginal}</p></details>` : nothing}<p class="meta">${linkedSource}${Number.isFinite(savedFirst) ? html` · first saved by Grid ${fmt(savedFirst)}` : nothing} · ${versionsLink}</p>`);
+      : html`<p class="meta">${profile?.originalNote ?? "The source supplied no narrative."}</p>`}${fullOriginal ? html`<details class="report-original"><summary>Call transcript</summary><p class="report-quote report-quote--long">${fullOriginal}</p></details>` : nothing}<p class="meta">${linkedSource}${Number.isFinite(savedFirst) ? html` · first saved by Grid ${fmt(savedFirst)}` : nothing} · ${versionsLink}</p>`);
     // The summary is the body of most reports (few carry much else), so it sits in a card in
     // the main column under the map rather than loose above it.
     const summaryCard = report.summary ? block("Summary", html`<p class="report-summary">${report.summary}</p>`) : nothing;

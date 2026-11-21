@@ -32,6 +32,8 @@ export type Profile = {
   when?: string;
   /** The source's own words when the envelope has none (burn: the line's message and call transcript). */
   original?: { text: string; full?: string };
+  /** Said in place of the original report when its text is already on the page (a feed's error is its reason given). */
+  originalNote?: string;
   timeline: ProfileMoment[];
   /** Day the timeline is on, when every moment shares it ("Nov 9"). */
   timelineDay?: string;
@@ -693,9 +695,16 @@ function sourceHealth(report: Report, revisions: Revision[], now: number, comple
   const h = report.sourceHealth as SourceHealth;
   const since = ms(h.since), recordedOnly = Number(report.revision) === 1;
   const ordered = [...revisions].sort((a, b) => Number(a.revision) - Number(b.revision));
+  // The error is printed once: in "Reason given" for this revision, else at the first turn that
+  // gave it. A turn that gave the same text again says so instead of repeating a long error.
+  const reason = h.error?.trim() || "";
+  const said = new Map<string, string>(reason ? [[reason, "Same reason as given"]] : []);
   const turns: Entry[] = ordered.map((r) => {
     const v = r.event.sourceHealth as SourceHealth | undefined;
-    return { at: ms(v?.since) || ms(r.observedAt), label: Number(r.revision) === 1 ? `Recording began: ${sourceStatusText(v?.status).toLowerCase()}` : sourceStatusText(v?.status), detail: v?.error || undefined, kind: "system" as const };
+    const at = ms(v?.since) || ms(r.observedAt), error = v?.error?.trim() || "";
+    const detail = !error || (error === reason && Number(r.revision) === Number(report.revision)) ? undefined : said.get(error) ?? error;
+    if (error && !said.has(error) && Number.isFinite(at)) said.set(error, `Same reason as on ${dayLabel.format(at)}, ${clock.format(at)}`);
+    return { at, label: Number(r.revision) === 1 ? `Recording began: ${sourceStatusText(v?.status).toLowerCase()}` : sourceStatusText(v?.status), detail, kind: "system" as const };
   });
   const stamp = Number.isFinite(since) ? `${dayLabel.format(since)}, ${clock.format(since)} PT` : "";
   const good = ms(h.lastSuccessAt);
@@ -707,7 +716,9 @@ function sourceHealth(report: Report, revisions: Revision[], now: number, comple
       // Revisions that only confirmed the state (readings) are not changes, nor is where recording began.
       { label: "Changes on record", value: String(Math.max(0, Number(report.revision) - (Number(report.readings) || 0) - 1)) },
     ],
-    sections: h.error ? [{ title: "Reason given", items: [{ label: "Error", value: h.error }] }] : [],
+    sections: reason ? [{ title: "Reason given", items: [{ label: "Error", value: reason }] }] : [],
+    // Grid writes the error as the report's text too; it is not quoted a second time.
+    originalNote: reason && report.description?.trim() === reason ? "This report's text is the reason given." : undefined,
     identifiers: [],
     ...moments([...notLoaded(revisions, complete), ...turns], now),
   };

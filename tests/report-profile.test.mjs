@@ -258,7 +258,31 @@ test("source health at revision 1: 'since' is when recording began, so the statu
     ["Last good reading", "None on record", "before this status began"],
     ["Changes on record", "0", undefined],
   ]);
-  assert.deepEqual(lines(p), ["15:32 Recording began: unavailable (no broker delivering)", "16:09 Now"]);
+  // The error is this revision's reason given; the timeline does not print it again.
+  assert.deepEqual(lines(p), ["15:32 Recording began: unavailable", "16:09 Now"]);
+});
+
+test("source health: a long error is printed once on the page, and a repeat says so", () => {
+  const at = T("2026-11-18T22:00:00Z"), error = "partial lane-closure coverage: cwwp2: GET https://cwwp2.dot.ca.gov/data/d3/lcs/lcsStatusD03.json: HTTP 500";
+  const ev = (status, since, rev) => ({ ...healthEvent(status, since, { error: status === "OK" ? "" : error }), revision: rev, readings: 0, description: status === "OK" ? "" : error });
+  const revs = [ev("OK", "2026-11-17T04:30:23Z", 1), ev("STALE", "2026-11-18T18:40:57Z", 2), ev("OK", "2026-11-18T18:50:57Z", 3), ev("STALE", "2026-11-18T20:40:57Z", 4), ev("OK", "2026-11-18T20:50:58Z", 5)];
+  const history = revs.map((r) => revOf(r.revision, r.sourceHealth.since, r));
+  // Revision 4 selected: the error is its reason given; the earlier outage with the same text says so.
+  const four = reportProfile(revs[3], history, at);
+  assert.deepEqual(four.sections, [{ title: "Reason given", items: [{ label: "Error", value: error }] }]);
+  assert.equal(four.originalNote, "This report's text is the reason given.");
+  assert.equal(JSON.stringify(four).split(error).length - 1, 1, "the error appears once in the profile");
+  assert.deepEqual(lines(four).slice(1, 4), ["Nov 18, 10:40 Stale (Same reason as given)", "Nov 18, 10:50 Current", "Nov 18, 12:40 Stale"]);
+  // Current again: no reason card; the first outage prints the error, the second refers to it.
+  const now = reportProfile(revs[4], history, at);
+  assert.deepEqual(now.sections, []);
+  assert.equal(now.originalNote, undefined);
+  assert.deepEqual(lines(now).slice(1, 4), [`Nov 18, 10:40 Stale (${error})`, "Nov 18, 10:50 Current", "Nov 18, 12:40 Stale (Same reason as on Nov 18, 10:40)"]);
+  // A different error is its own text, and a report whose text is not the error is still quoted.
+  const r4 = { ...revs[3], description: "Upstream note", sourceHealth: { ...revs[3].sourceHealth, error: "HTTP 503" } };
+  const other = reportProfile(r4, [...history.slice(0, 3), revOf(4, r4.sourceHealth.since, r4)], at);
+  assert.equal(other.originalNote, undefined);
+  assert.deepEqual(lines(other).slice(1, 4), [`Nov 18, 10:40 Stale (${error})`, "Nov 18, 10:50 Current", "Nov 18, 12:40 Stale"]);
 });
 
 test("source health once revised: the status has a beginning, and a current feed shows no frozen 'last good reading'", () => {
