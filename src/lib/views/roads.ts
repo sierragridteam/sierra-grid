@@ -183,7 +183,7 @@ export async function mount(ctx: Context) {
     // A strip can be shorter than the scale they share, so the texts are fitted once the scale is known.
     const drafts = chains.map((c) => strip(c, s, work, recordUrl));
     const scale = Math.max(...drafts.map((x) => x.length));
-    const strips = drafts.map((x) => ({ ...x, sections: x.sections.map(({ labels, ...section }) => ({ ...section, label: fitLabel(labels, labelRoom(s.strip, section, scale), textWidth) })) }));
+    const strips = drafts.map((x) => ({ ...x, sections: x.sections.map(({ labels, ...section }) => ({ ...section, label: fitLabel(labels, labelRoom(s.strip, section, scale, x.bands.length > 0), textWidth) })) }));
     const figure = chainFigure(chains, s.chains, s.chainRead);
     const reportsUnknown = s.errors.includes("road reports") && !s.events.length;
     const past = chains.flatMap((c) => beyondClosures(c).map((b) => beyondText(b)));
@@ -205,7 +205,7 @@ export async function mount(ctx: Context) {
         ${stat({ label: "CHP incidents", value: String(chpActive.length), href: eventsUrl, actionLabel: "Browse road reports", sub: s.chp ? `feed ${s.chp.status.toLowerCase()}${s.chp.lastSuccessAt ? ` · checked ${ageText(Math.max(0, s.now - ms(s.chp.lastSuccessAt)))} ago` : ""}` : "live traffic incidents" })}
       </div>
       ${card({ variant: "panel", title: "Routes", kicker: "Monitored sections, to scale", as: "section", class: "roads-corridors" },
-        chains.length ? html`<div class="roads-strips">${strips.map(({ bands, ...p }) => html`<div class="roads-route">${corridor({ ...p, length: scale })}${chainLane(p.name, bands, scale)}</div>`)}</div>` : html`<p class="meta">${s.loaded ? "No monitored routes returned." : "Loading routes…"}</p>`)}
+        chains.length ? html`<div class="roads-strips">${strips.map(({ bands, ...p }) => html`<div class="roads-route">${corridor({ ...p, length: scale, bands: corridorBands(bands), bandsLabel: `Chain control on ${p.name}` })}</div>`)}</div>` : html`<p class="meta">${s.loaded ? "No monitored routes returned." : "Loading routes…"}</p>`)}
       <section class="roads-map-section" aria-label="Road map">
         <ul class="roads-legend" aria-label="Map key">
           <li><span class="roads-key roads-key--line" style="--key: var(--state-ok)"></span>Open</li>
@@ -413,17 +413,11 @@ function strip(c: Chain, s: State, work: WorkWindow[], recordUrl: (id: string) =
  * own scale: a band from the first to the last checkpoint with its level.
  * The styles show it only where the strip is horizontal.
  */
-function chainLane(route: string, bands: ChainBand[], scale: number) {
-  if (!bands.length) return nothing;
-  const pct = (v: number) => Math.max(0, Math.min(100, (v / (scale || 1)) * 100));
-  return html`<ul class=${`roads-chain-lane${bands.length > 1 ? " roads-chain-lane--several" : ""}`} aria-label=${`Chain control on ${route}`}>${bands.map((b) => {
-    const side = pct(b.from) < 12 ? "start" : pct(b.to) > 88 ? "end" : "middle";
-    return html`<li class=${`roads-chain-band roads-chain-band--${side}${b.inferred ? " is-inferred" : ""}`} style=${`--from: ${pct(b.from).toFixed(2)}%; --to: ${pct(b.to).toFixed(2)}%`} title=${`${b.label} · ${b.where}${b.inferred ? `. ${INFERRED_NOTE}` : ""}`}>
-      <span class="roads-chain-band__bar" aria-hidden="true"></span>
-      <span class="roads-chain-band__label">${b.label}<span class="sr-only"> · ${b.where}${b.inferred ? `. ${INFERRED_NOTE}` : ""}</span></span>
-    </li>`;
-  })}</ul>`;
-}
+/** A route's chain stretches as the corridor's bands: under the strip, or beside it where it runs down the page. */
+const corridorBands = (bands: ChainBand[]) => bands.map((b) => ({
+  from: b.from, to: b.to, label: b.label, short: b.level, approximate: b.inferred,
+  detail: b.inferred ? `${b.where}. ${INFERRED_NOTE}` : b.where,
+}));
 
 /** A closure point on the map by the source's rating of it: only a severe one is red and pulses. */
 const closureMark = (rank: number) => {

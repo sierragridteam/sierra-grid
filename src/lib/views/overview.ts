@@ -52,7 +52,7 @@ export async function mount(ctx: Context) {
     return summaryBanner({ kicker: "Ebbetts Pass Corridor", level: 1,
       // The severity sentence is the list's own count once the list is shown. Before the summary
       // arrives it is left out; if the summary failed there is no list, and the events' count stands.
-      headline: count ? `${count.first}${attention ? ` ${attentionSentence(attention.items)}` : s.summaryError ? ` ${count.second}` : ""}` : s.eventError ? "Current event counts are unavailable." : "Checking the latest reports across the corridor.",
+      headline: count ? `${count.first}${attention ? ` ${attentionSentence(attention.items, attention.complete)}` : s.summaryError ? ` ${count.second}` : ""}` : s.eventError ? "Current event counts are unavailable." : "Checking the latest reports across the corridor.",
       meta: count ? `${count.active} active · ${count.scheduled} scheduled${s.partial ? " · partial count" : ""}` : "Live source reports, regional conditions and observations.",
       asideTitle: "Highest severity now",
       aside: html`<div id="attention" aria-label="Needs attention" aria-busy=${String(!attention && !s.summaryError)}>${attention ? html`

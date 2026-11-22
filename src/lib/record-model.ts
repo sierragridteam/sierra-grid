@@ -17,7 +17,11 @@ const words = (value: string) => value.replaceAll("_", " ").toLowerCase().replac
 /** The design system's badge tones. */
 export type BadgeTone = "ok" | "elevated" | "alarm" | "muted";
 export type RecordBadge = { label: string; tone: BadgeTone };
-export type RecordEntry = { at: number; id: string; revision: number; label: string; detail?: string; badge: RecordBadge };
+export type RecordEntry = {
+  at: number; id: string; revision: number; label: string; detail?: string; badge: RecordBadge;
+  /** In place of `detail`: the reason is word for word the one given at this time, on a newer entry for the same thing. */
+  sameReasonAs?: number;
+};
 
 // ---- Reading the record -------------------------------------------------
 
@@ -144,7 +148,9 @@ export function sourceSince(events: Report[]): Map<string, SourceHeld> {
  * The changes of status in a list of source-health revisions, newest first.
  * Revision 1 is where recording began, not a change, so it is left out; so is
  * a revision whose status is the one before it (the reason changed, not the
- * status).
+ * status). A source that fails the same way again (Caltrans' HTTP 500 three
+ * times on 2026-11-18) gives its reason once, on the newest entry; the older
+ * ones point at it by its time.
  */
 export function sourceChanges(revisions: Revision[]): RecordEntry[] {
   const byEvent = new Map<string, Map<number, Revision>>();
@@ -161,7 +167,11 @@ export function sourceChanges(revisions: Revision[]): RecordEntry[] {
       };
     })
     .filter((e) => Number.isFinite(e.at))
-    .sort((a, b) => b.at - a.at || a.id.localeCompare(b.id));
+    .sort((a, b) => b.at - a.at || a.id.localeCompare(b.id))
+    .map((e, i, all): RecordEntry => {
+      const newer = e.detail ? all.slice(0, i).find((x) => x.id === e.id && x.detail === e.detail) : undefined;
+      return newer ? { ...e, detail: undefined, sameReasonAs: newer.at } : e;
+    });
 }
 
 export type RecordPanel = {

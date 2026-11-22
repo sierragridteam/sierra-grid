@@ -94,3 +94,16 @@ test("the severity sentence is counted from the list it sits beside, whatever th
   assert.equal(attentionSentence([{ rank: 4 }, { rank: 3 }]), "1 is extreme.");
   assert.equal(attentionSentence([]), "None are rated severe or extreme.");
 });
+
+test("with source coverage missing, the sentence does not conclude past the reports that arrived", () => {
+  const input = summary();
+  input.domains[1].status = "UNAVAILABLE";
+  const attention = attentionFor(input);
+  assert.equal(attention.complete, false);
+  assert.equal(attentionSentence(attention.items, attention.complete), "None of the reports that arrived are rated severe or extreme.");
+  assert.equal(attentionSentence([{ rank: 3 }, { rank: 3 }], false), "At least 2 are severe.");
+  assert.equal(attentionSentence([{ rank: 4 }, { rank: 2 }], false), "At least 1 is extreme.");
+  // Complete coverage reads as before, and is the default.
+  assert.equal(attentionSentence([], true), "None are rated severe or extreme.");
+  assert.equal(attentionSentence([{ rank: 3 }], true), "1 is severe.");
+});

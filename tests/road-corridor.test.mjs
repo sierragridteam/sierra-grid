@@ -475,6 +475,9 @@ test("the room a section's text has: its share of a strip across the page, a col
   // 34rem and under the strip is vertical: the same column whatever the section's length.
   assert.equal(labelRoom({ width: 316, rem: 16 }, section, 81), 176);
   assert.equal(labelRoom({ width: 316, rem: 16 }, { from: 33, to: 71 }, 81), 176);
+  // With the chain lane beside the vertical track, less: 316 - 11rem. Across the page the lane is under the strip and takes nothing.
+  assert.equal(labelRoom({ width: 316, rem: 16 }, section, 81, true), 140);
+  near(labelRoom({ width: 1010, rem: 16 }, section, 81, true), 150, 1);
   assert.equal(labelRoom({ width: 544, rem: 16 }, section, 81), 404);
   assert.ok(labelRoom({ width: 545, rem: 16 }, section, 81) < 100);
   // Not measured yet: not known.

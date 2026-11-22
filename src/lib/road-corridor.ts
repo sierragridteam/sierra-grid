@@ -481,15 +481,18 @@ export const fitLabel = (labels: string[], room: number | undefined, width: (tex
  * Across the page the text sits over its section, so the room is the
  * section's share of the strip. Below about 34rem the design system's
  * corridor runs down the page with the texts in a column beside it, and the
- * room is what the place names and the track leave (about 8.75rem: an
- * estimate of the component's layout, not something it promises). A wrong
+ * room is what the place names and the track leave (about 8.75rem), and
+ * the chain lane beside the track when the route has bands (its level,
+ * "R2", about 2rem more: 11rem in all). These are estimates of the component's layout, not something it
+ * promises. A wrong
  * estimate costs a text shortened a little early, or cut by the component's
  * own ellipsis as before. Unknown until the strip has been measured.
  */
-export function labelRoom(strip: { width: number; rem: number }, section: { from: number; to: number }, length: number) {
+export function labelRoom(strip: { width: number; rem: number }, section: { from: number; to: number }, length: number, banded = false) {
   if (!(strip.width > 0) || !(length > 0)) return undefined;
   const rem = strip.rem || 16;
-  return strip.width <= 34 * rem ? strip.width - 8.75 * rem : ((section.to - section.from) / length) * strip.width - 12;
+  // Vertical, the labels have what is left of the stop names and the track, and of the chain lane when the route has one.
+  return strip.width <= 34 * rem ? strip.width - (banded ? 11 : 8.75) * rem : ((section.to - section.from) / length) * strip.width - 12;
 }
 
 /**

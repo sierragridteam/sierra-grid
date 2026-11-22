@@ -92,6 +92,30 @@ test("source changes are the status turns in the page's own words, newest first,
   ]);
 });
 
+test("a source that fails the same way again gives its reason once, on the newest entry; older ones point at it", () => {
+  const err = "partial chain-control data: cwwp2 chain controls: cwwp2: GET https://cwwp2.dot.ca.gov/data/d10/cc/ccStatusD10.json: HTTP 500";
+  const changes = sourceChanges([
+    rev(7, "2026-11-18T20:36:00Z", health("cc", "Caltrans (chain control)", "OK", "2026-11-18T20:36:00Z")),
+    rev(6, "2026-11-18T20:31:00Z", health("cc", "Caltrans (chain control)", "STALE", "2026-11-18T20:31:00Z", err)),
+    rev(5, "2026-11-18T19:21:00Z", health("cc", "Caltrans (chain control)", "OK", "2026-11-18T19:21:00Z")),
+    rev(4, "2026-11-18T19:16:00Z", health("cc", "Caltrans (chain control)", "STALE", "2026-11-18T19:16:00Z", err)),
+    rev(3, "2026-11-18T18:36:00Z", health("cc", "Caltrans (chain control)", "OK", "2026-11-18T18:36:00Z")),
+    rev(2, "2026-11-18T18:31:00Z", health("cc", "Caltrans (chain control)", "STALE", "2026-11-18T18:31:00Z", err)),
+    // Another source with the same words is its own reason; the same source with another reason keeps it.
+    rev(4, "2026-11-18T18:00:00Z", health("lcs", "Caltrans (lane closures)", "STALE", "2026-11-18T18:00:00Z", err)),
+    rev(3, "2026-11-18T17:00:00Z", health("lcs", "Caltrans (lane closures)", "OK", "2026-11-18T17:00:00Z")),
+    rev(2, "2026-11-18T16:00:00Z", health("lcs", "Caltrans (lane closures)", "STALE", "2026-11-18T16:00:00Z", "HTTP 502")),
+  ]);
+  const stale = changes.filter((c) => c.badge.label === "Stale").map((c) => [c.id, c.detail, c.sameReasonAs && new Date(c.sameReasonAs).toISOString()]);
+  assert.deepEqual(stale, [
+    ["source:cc", err, undefined],
+    ["source:cc", undefined, "2026-11-18T20:31:00.000Z"],
+    ["source:cc", undefined, "2026-11-18T20:31:00.000Z"],
+    ["source:lcs", err, undefined],
+    ["source:lcs", "HTTP 502", undefined],
+  ]);
+});
+
 test("a status this build does not know is shown as sent and muted; a revision that kept the status is not a change", () => {
   const changes = sourceChanges([
     rev(4, "2026-11-16T12:00:00Z", health("nws", "NWS", "DEGRADED", "2026-11-16T12:00:00Z")),
