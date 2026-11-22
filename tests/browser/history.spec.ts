@@ -74,6 +74,11 @@ test("report selections update only the detail pane; Back and Forward step throu
   // Choosing a report is a step: one new history entry.
   expect(await page.evaluate(() => history.length)).toBe(historyLength + 1);
   await expect(page.locator(".browser-selection")).toHaveCSS("border-left-style", "solid");
+  // The detail pane shows the report's history. Its newest entries can all be readings (the burn line's
+  // answer held for days, 2026-11-21), which leave the changes under "earlier revisions": open them when so.
+  await expect(page.locator(".report-version").first()).toBeVisible();
+  const older = page.locator(".report-older");
+  if (!(await page.locator(".report-version .ds-diff").first().isVisible()) && (await older.count())) await older.locator("summary").click();
   await expect(page.locator(".report-version .ds-diff").first()).toBeVisible();
   // Back returns to the report before, on the same page (the router mounts it again from the URL).
   await page.goBack(); await ready(page);
