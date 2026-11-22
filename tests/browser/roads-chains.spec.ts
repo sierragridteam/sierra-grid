@@ -50,6 +50,8 @@ async function roads(page: Page, chains: "fail" | ReturnType<typeof requirement>
   await page.goto("/roads/");
   await expect(page.locator("#content")).toHaveAttribute("aria-busy", "false", { timeout: 30000 });
   await expect(page.locator(".roads-answer")).not.toHaveText("Checking the roads…", { timeout: 30000 });
+  // The strips are drawn from the live layers these routes edit, which can be slow to answer: give them the same time.
+  await expect(page.locator(".roads-route .ds-corridor__name", { hasText: /^Hwy 4$/ })).toBeVisible({ timeout: 30000 });
 }
 const hwy4 = (page: Page) => page.locator(".roads-route").filter({ has: page.locator(".ds-corridor__name", { hasText: /^Hwy 4$/ }) });
 const box = async (locator: Locator) => (await locator.boundingBox())!;
