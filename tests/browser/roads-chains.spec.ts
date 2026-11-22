@@ -70,17 +70,17 @@ test("an open road under chain control stays open and is marked: strip, section,
   await expect(route.locator(".ds-corridor ol.sr-only")).toContainText("Arnold to Bear Valley: Open · chains R2");
   await expect(route.locator(".ds-corridor ol.sr-only")).toContainText("Open, chains required (R2) from Mill Creek to Tamarack");
   // One band, on the strip's own scale: it starts at the stretch's marker and lies inside the Arnold to Bear Valley section.
-  const band = route.locator(".roads-chain-band");
+  const band = route.locator(".ds-corridor__band");
   await expect(band).toHaveCount(1);
-  await expect(band.locator(".roads-chain-band__label")).toContainText("Chains R2");
-  const bar = await box(band.locator(".roads-chain-band__bar")), marker = await box(route.locator(".ds-corridor__marker--chain")), track = await box(route.locator(".ds-corridor__track"));
+  await expect(band.locator(".ds-corridor__band-label")).toContainText("Chains R2");
+  const bar = await box(band.locator(".ds-corridor__band-bar")), marker = await box(route.locator(".ds-corridor__marker--chain")), track = await box(route.locator(".ds-corridor__track"));
   expect(Math.abs(bar.x - (marker.x + marker.width / 2))).toBeLessThan(4);
   const joints = await route.locator(".ds-corridor__joint").evaluateAll((els) => els.map((el) => el.getBoundingClientRect()).map((r) => r.x + r.width / 2));
   expect(bar.x).toBeGreaterThan(joints[2]); // past Arnold
   expect(bar.x + bar.width).toBeLessThan(joints[3]); // short of Bear Valley
   expect(bar.x).toBeGreaterThan(track.x);
   // A route with no requirement has no band.
-  await expect(page.locator(".roads-route").filter({ hasText: "Hwy 49" }).locator(".roads-chain-band")).toHaveCount(0);
+  await expect(page.locator(".roads-route").filter({ hasText: "Hwy 49" }).locator(".ds-corridor__band")).toHaveCount(0);
   // The map: the stretch is a line cut from the route, and the route under it keeps its open colour.
   await expect(page.locator(".roads-legend")).toContainText("Chains required");
   const features = await page.locator("#roads-map sierra-geo-map").evaluate((el: any) => el.data.features.map((f: any) => ({ ...f.properties, type: f.geometry.type, points: f.geometry.coordinates.length })));
@@ -89,9 +89,23 @@ test("an open road under chain control stays open and is marked: strip, section,
   expect(stretch[0]).toMatchObject({ type: "LineString", tone: "glacier", label: "Chains required (R2) on Hwy 4 from Mill Creek to Tamarack" });
   expect(stretch[0].points).toBeGreaterThan(10);
   expect(features.filter((f: any) => f.kind === "segment").every((f: any) => f.tone === "pine")).toBe(true);
-  // Phone: the strip runs down the page and has no axis to draw a band on, so the summary (keyed with the band's colour) and the section's label carry it.
+  // The lane is named for screen readers, and the band says where.
+  const lane = route.getByRole("list", { name: "Chain control on Hwy 4" });
+  await expect(lane.getByRole("listitem")).toHaveCount(1);
+  await expect(lane.locator(".ds-corridor__band-text")).toHaveText("Chains R2");
+  await expect(lane.getByRole("listitem")).toContainText("· Mill Creek to Tamarack");
+  // Phone: the strip runs down the page and the band runs beside it, from the stretch's marker, inside the section; the summary and the section's label still say it.
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(route.locator(".roads-chain-lane")).toBeHidden();
+  const vbar = await box(band.locator(".ds-corridor__band-bar")), vmarker = await box(route.locator(".ds-corridor__marker--chain")), vtrack = await box(route.locator(".ds-corridor__track"));
+  expect(vbar.height).toBeGreaterThan(vbar.width * 2);
+  expect(vbar.x).toBeGreaterThan(vtrack.x + vtrack.width);
+  expect(Math.abs(vbar.y - (vmarker.y + vmarker.height / 2))).toBeLessThan(4);
+  const vjoints = await route.locator(".ds-corridor__joint").evaluateAll((els) => els.map((el) => el.getBoundingClientRect()).map((r) => r.y + r.height / 2));
+  expect(vbar.y).toBeGreaterThan(vjoints[2]);
+  expect(vbar.y + vbar.height).toBeLessThan(vjoints[3]);
+  // Beside it, just the level, so the section labels keep their room.
+  await expect(band.locator(".ds-corridor__band-short")).toHaveText("R2");
+  await expect(band.locator(".ds-corridor__band-short")).toBeVisible();
   await expect(summary.locator(".roads-chain-note")).toHaveText("chains R2 from Mill Creek to Tamarack");
   await expect(summary.locator(".roads-chain-note .roads-key--band")).toBeVisible();
   await expect(route.locator(".ds-corridor__label", { hasText: "chains R2" })).toBeVisible();
@@ -107,17 +121,17 @@ test("two stretches on one route are two bands whose labels do not collide", asy
   const route = hwy4(page);
   await expect(route.locator(".ds-corridor__summary")).toContainText("chains R1 from Mill Creek to Cottage Springs and R3 from Cottage Springs to Poison Springs");
   await expect(route.locator(".ds-corridor__label", { hasText: "chains" })).toHaveText(/^Open · chains R1, R3 · \d+ min$/);
-  const bands = route.locator(".roads-chain-band");
+  const bands = route.locator(".ds-corridor__band");
   await expect(bands).toHaveCount(2);
-  await expect(bands.locator(".roads-chain-band__label")).toContainText(["Chains R1", "Chains R3"]);
-  const [r1, r3] = [await box(bands.nth(0).locator(".roads-chain-band__bar")), await box(bands.nth(1).locator(".roads-chain-band__bar"))];
+  await expect(bands.locator(".ds-corridor__band-label")).toContainText(["Chains R1", "Chains R3"]);
+  const [r1, r3] = [await box(bands.nth(0).locator(".ds-corridor__band-bar")), await box(bands.nth(1).locator(".ds-corridor__band-bar"))];
   expect(r1.x + r1.width).toBeLessThan(r3.x); // a gap between them
   // Each band is as long as its stretch, not as long as its label: it runs from its own marker to the next stretch's.
   const markers = await route.locator(".ds-corridor__marker--chain").evaluateAll((els) => els.map((el) => el.getBoundingClientRect()).map((r) => r.x + r.width / 2));
   expect(Math.abs(r1.x - markers[0])).toBeLessThan(4);
   expect(Math.abs(r1.x + r1.width - markers[1])).toBeLessThan(4);
   expect(Math.abs(r3.x - markers[1])).toBeLessThan(4);
-  const [a, b] = [await box(bands.nth(0).locator(".roads-chain-band__label")), await box(bands.nth(1).locator(".roads-chain-band__label"))];
+  const [a, b] = [await box(bands.nth(0).locator(".ds-corridor__band-label")), await box(bands.nth(1).locator(".ds-corridor__band-label"))];
   const overlap = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
   expect(overlap).toBe(false);
 });
@@ -126,7 +140,7 @@ test("when the chain-control layer cannot be read, no band is drawn and nothing 
   await roads(page, "fail");
   await expect(page.locator(".callout")).toContainText("chain controls and closure points");
   await expect(page.locator(".roads-kpis .stat").nth(1)).toContainText("chain control status is unavailable");
-  await expect(page.locator(".roads-chain-band")).toHaveCount(0);
+  await expect(page.locator(".ds-corridor__band")).toHaveCount(0);
   await expect(hwy4(page).locator(".ds-corridor__summary")).toContainText("chain control unavailable");
   await expect(hwy4(page).locator(".ds-corridor__label", { hasText: "chains" })).toHaveCount(0);
   const features = await page.locator("#roads-map sierra-geo-map").evaluate((el: any) => el.data.features.map((f: any) => f.properties.kind));
@@ -147,7 +161,7 @@ test("the layer cannot be read but the road lists its requirement: title, figure
   await expect(route.locator(".ds-corridor__summary")).toContainText("chains R2 from Mill Creek to Tamarack");
   await expect(route.locator(".ds-corridor__summary")).not.toContainText("unavailable");
   // Without checkpoints there is no extent: nothing is drawn on the strip or the map.
-  await expect(page.locator(".roads-chain-band")).toHaveCount(0);
+  await expect(page.locator(".ds-corridor__band")).toHaveCount(0);
   await expect(route.locator(".roads-key--band")).toHaveCount(0);
   const features = await page.locator("#roads-map sierra-geo-map").evaluate((el: any) => el.data.features.map((f: any) => f.properties.kind));
   expect(features).not.toContain("chain-stretch");

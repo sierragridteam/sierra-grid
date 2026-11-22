@@ -84,11 +84,17 @@ export function attentionFor(summary: V1PlaceSummary) {
  * disagree. They did twice in 2026-11: the sentence counted events while the
  * list also carried closed monitored roads, then a seasonal closure that is a
  * condition and not an event.
+ *
+ * With some source coverage missing (`complete` false) the list may be short
+ * of what is out there, so the sentence does not conclude past it: a count is
+ * "at least", and none found is about the reports that arrived, not the region.
  */
-export function attentionSentence(items: Pick<AttentionItem, "rank">[]): string {
+export function attentionSentence(items: Pick<AttentionItem, "rank">[], complete = true): string {
   const extreme = items.filter((i) => i.rank >= 4).length;
   const severe = items.filter((i) => i.rank === 3).length;
-  if (extreme) return `${extreme} ${extreme === 1 ? "is" : "are"} extreme.`;
-  if (severe) return `${severe} ${severe === 1 ? "is" : "are"} severe.`;
-  return "None are rated severe or extreme.";
+  const least = complete ? "" : "At least ";
+  const count = (n: number, word: string) => `${least}${n} ${n === 1 ? "is" : "are"} ${word}.`;
+  if (extreme) return count(extreme, "extreme");
+  if (severe) return count(severe, "severe");
+  return complete ? "None are rated severe or extreme." : "None of the reports that arrived are rated severe or extreme.";
 }

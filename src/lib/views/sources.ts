@@ -121,7 +121,7 @@ export async function mount(ctx: Context) {
           ${panel.entries.length ? html`<ul class="sources-changes">${panel.entries.map((e) => html`<li>
             ${badge(e.badge.label, { tone: e.badge.tone })}
             <a href=${recordUrl(e.id)}>${e.label}</a><span class="meta">${when(e.at)}</span>
-            ${e.detail ? html`<span class="meta sources-error">${e.detail}</span>` : nothing}
+            ${e.detail ? html`<span class="meta sources-error">${e.detail}</span>` : e.sameReasonAs ? html`<span class="meta">Same reason as ${when(e.sameReasonAs)}.</span>` : nothing}
           </li>`)}</ul>` : html`<p class="meta">${panel.message}</p>`}
           ${panel.note ? html`<p class="meta">${panel.note}</p>` : nothing}`) : nothing}
       ${card({ variant: "panel", title: "Every source", kicker: "Grouped by the page it feeds", as: "section", class: "sources-all" },
