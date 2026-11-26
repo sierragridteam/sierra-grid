@@ -40,22 +40,29 @@ test("clicking a node on the map opens its card over the map", async ({ page }) 
   await page.goto("/mesh/"); await ready(page);
   const host = page.locator("#mesh-network-map sierra-geo-map");
   await expect.poll(() => host.evaluate((el: any) => !!el.map?.getLayer("ds-points")), { timeout: 30000 }).toBe(true);
-  await page.waitForTimeout(500);
-  // A regional node (labelled, focus) at its projected position.
-  const point = await host.evaluate((el: any) => {
+  // A regional node (labelled, focus) at its projected position. The position is read once the map has
+  // come to rest and again for every click: the map fits its focus after its layers exist, and a live
+  // refresh can redraw it, so a point projected half a second after load was sometimes not where the node was.
+  const atRest = () => expect.poll(() => host.evaluate((el: any) => !el.map.isMoving()), { timeout: 30000 }).toBe(true);
+  const nodePoint = () => host.evaluate((el: any) => {
     const i = el.data.features.findIndex((f: any) => f.properties.kind === "node" && f.properties.focus);
     const p = el.map.project(el.data.features[i].geometry.coordinates), r = el.map.getCanvas().getBoundingClientRect();
     return { x: r.left + p.x, y: r.top + p.y, label: el.data.features[i].properties.label };
   });
-  await page.mouse.click(point.x, point.y);
   const card = page.locator(".ds-map-card");
+  // A click that lands while the map is redrawn opens nothing; it is made again at the node's new position.
+  const clickNode = () => expect(async () => {
+    await atRest(); const point = await nodePoint(); await page.mouse.click(point.x, point.y);
+    await expect(card).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 30000 });
+  await clickNode();
   await expect(card).toBeVisible();
   await expect(card.getByRole("link", { name: "Node report →" })).toBeVisible();
   await expect(page.locator(".mesh-inspect")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(card).toHaveCount(0);
   // The close button works too.
-  await page.mouse.click(point.x, point.y);
+  await clickNode();
   await card.getByRole("button", { name: "Close details" }).click();
   await expect(card).toHaveCount(0);
 });

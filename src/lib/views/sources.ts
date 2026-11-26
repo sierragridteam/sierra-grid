@@ -11,7 +11,7 @@ import { stateUrl } from "../state";
 import type { ViewId } from "../../config/views";
 import { since } from "../conditions-model";
 import type { Report, Revision } from "../event-model";
-import { RECORD_REFRESH_MS, isOwnService, nextRead, pagedReader, recordWindow, settle, sourceRecord, type Read, type RevisionPages } from "../record-model";
+import { RECORD_REFRESH_MS, isOwnService, nextRead, pagedReader, recordWindow, settle, sourceRecord, withoutReasonsShownAbove, type Read, type RevisionPages } from "../record-model";
 import { createStore, region } from "@sierragridteam/design-system/lib/region";
 import { html, nothing } from "@sierragridteam/design-system/lib/template";
 import { badge, card, stat } from "@sierragridteam/design-system/lib/ui";
@@ -100,7 +100,9 @@ export async function mount(ctx: Context) {
       const h = record.held.get(x.id);
       return h && h.status === x.status && Number.isFinite(h.since) ? html`<a class="meta sources-since" href=${recordUrl(h.eventId)}>${h.recordedOnly ? "recorded since" : "since"} ${when(h.since)}</a>` : nothing;
     };
-    const panel = record.panel;
+    // A failing source's reason is printed once: in "Needs attention". Its entry in "Status changes" points up to it.
+    const reasonsAbove = new Map(bad.flatMap((x): [string, string][] => { const id = record.held.get(x.id)?.eventId; return id && x.lastError ? [[id, x.lastError]] : []; }));
+    const panel = record.panel && { ...record.panel, entries: withoutReasonsShownAbove(record.panel.entries, reasonsAbove) };
     return html`
       ${pageHero({ kicker: "Source health · the feeds behind every page", title, titleClass: "sources-answer", lines })}
       ${s.error && s.sources.length ? html`<p class="callout">The last check failed; this is the state as of ${fmt(s.updatedAt)}.</p>` : nothing}
@@ -121,7 +123,7 @@ export async function mount(ctx: Context) {
           ${panel.entries.length ? html`<ul class="sources-changes">${panel.entries.map((e) => html`<li>
             ${badge(e.badge.label, { tone: e.badge.tone })}
             <a href=${recordUrl(e.id)}>${e.label}</a><span class="meta">${when(e.at)}</span>
-            ${e.detail ? html`<span class="meta sources-error">${e.detail}</span>` : e.sameReasonAs ? html`<span class="meta">Same reason as ${when(e.sameReasonAs)}.</span>` : nothing}
+            ${e.detail ? html`<span class="meta sources-error">${e.detail}</span>` : e.reasonAbove ? html`<span class="meta">Reason given above.</span>` : e.sameReasonAs ? html`<span class="meta">Same reason as ${when(e.sameReasonAs)}.</span>` : nothing}
           </li>`)}</ul>` : html`<p class="meta">${panel.message}</p>`}
           ${panel.note ? html`<p class="meta">${panel.note}</p>` : nothing}`) : nothing}
       ${card({ variant: "panel", title: "Every source", kicker: "Grouped by the page it feeds", as: "section", class: "sources-all" },

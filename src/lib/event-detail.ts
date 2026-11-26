@@ -11,7 +11,7 @@ import { telemetryMetrics, telemetrySeries, type TelemetryMetric } from "./mesh-
 import { data, makeContext, type Context } from "./context";
 import { fmt } from "./render";
 import { stateUrl } from "./state";
-import { changeValues, humanize, identifierList, isReading, reportChanges, reportFields, reportTitle, typeLabel, type Report, type Revision } from "./event-model";
+import { changeValues, humanize, identifierList, isReading, reportChanges, reportFields, reportTitle, typeLabel, versionTotal, type Report, type Revision } from "./event-model";
 export { identifierList };
 
 export const severityTone = (value: string) => ["SEVERE", "EXTREME"].includes(value) ? "alarm" as const : value === "MODERATE" ? "elevated" as const : "muted" as const;
@@ -104,7 +104,8 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
       <a href=${stateUrl({ ...ctx.state, topic: "events", layer: "ALL", eventStatus: "all", record: r.event.id, revision: "", autoSelect: true })}>${reportTitle(r.event)}</a>
       <span class="meta">${typeLabel(r.event.layer)} · ${humanize(r.event.status)}${r.reason ? html` · ${r.reason}` : nothing}</span>
     </li>`)}</ul>${related.length > 6 ? html`<p class="meta">${related.length - 6} more not shown.</p>` : nothing}`) : nothing;
-    const versionsLink = html`<a href="#report-versions" @click=${(event: MouseEvent) => { event.preventDefault(); host.querySelector("#report-versions")?.scrollIntoView({ block: "start" }); }}>${ordered.length === 1 ? "1 version" : `${ordered.length} versions`}</a>`;
+    const total = versionTotal(report, ordered.length);
+    const versionsLink = html`<a href="#report-versions" @click=${(event: MouseEvent) => { event.preventDefault(); host.querySelector("#report-versions")?.scrollIntoView({ block: "start" }); }}>${total === 1 ? "1 version" : `${total} versions`}</a>`;
     // Known only when revision 1 is loaded: the oldest loaded revision of a longer history is not the first save.
     const savedFirst = firstSaved(s.revisions, report);
     const original = profile?.originalNote ? "" : report.description || profile?.original?.text || "", long = original.length > 320;
@@ -145,7 +146,7 @@ export function reportDetail(ctx: Context, host: HTMLElement, close?: DetailClos
           <div class="report-versions">${repeat(ordered.slice(recentUpdates), revision => revision.revision, (revision, index) => version(revision, index + recentUpdates))}</div>
         </details>` : nothing}
         ${s.next ? html`<button class="btn btn--outline btn--sm" type="button" ?disabled=${s.moreLoading} @click=${loadOlder}>Load older revisions</button>` : nothing}
-        ${s.historyLoading || s.historyError || s.next ? html`<p class="meta" role="status">${s.historyLoading ? "Loading revisions…" : s.historyError || `${ordered.length} revisions loaded.`}</p>` : nothing}
+        ${s.historyLoading || s.historyError || s.next ? html`<p class="meta" role="status">${s.historyLoading ? "Loading revisions…" : s.historyError || `${ordered.length} of ${total} revisions loaded.`}</p>` : nothing}
       </section>
       <footer class="report-source meta">Grid record <code>${report.id}</code></footer>
     </div>`;

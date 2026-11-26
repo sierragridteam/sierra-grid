@@ -21,6 +21,8 @@ export type RecordEntry = {
   at: number; id: string; revision: number; label: string; detail?: string; badge: RecordBadge;
   /** In place of `detail`: the reason is word for word the one given at this time, on a newer entry for the same thing. */
   sameReasonAs?: number;
+  /** In place of `detail`: the reason is word for word the one the page already gives above, for the same thing as it is now. */
+  reasonAbove?: boolean;
 };
 
 // ---- Reading the record -------------------------------------------------
@@ -172,6 +174,17 @@ export function sourceChanges(revisions: Revision[]): RecordEntry[] {
       const newer = e.detail ? all.slice(0, i).find((x) => x.id === e.id && x.detail === e.detail) : undefined;
       return newer ? { ...e, detail: undefined, sameReasonAs: newer.at } : e;
     });
+}
+
+/**
+ * The entries with a reason left out where the page already prints it: `shown`
+ * is, by record id, the reason given above the list for the thing as it is
+ * now (the Sources page's "Needs attention"). An entry for that thing with
+ * word for word that reason says so and does not print it again; an entry
+ * with another reason, or for another thing, keeps its own.
+ */
+export function withoutReasonsShownAbove(entries: RecordEntry[], shown: Map<string, string>): RecordEntry[] {
+  return entries.map((e) => (e.detail && shown.get(e.id) === e.detail ? { ...e, detail: undefined, reasonAbove: true } : e));
 }
 
 export type RecordPanel = {

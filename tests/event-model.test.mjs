@@ -168,3 +168,13 @@ test("a feed's health report lists its error once among the changes, not also as
   // Text that is not the error is still the original report.
   assert.ok(reportChanges(health("OK", ""), { ...health("STALE", error), description: "Upstream note" }).some((c) => c.label === "Original report"));
 });
+
+test("a report's version count is all its revisions, not the page of history that is loaded", () => {
+  const { versionTotal } = eventModel;
+  assert.equal(versionTotal({ revision: 312 }, 50), 312); // a mesh node: 50 loaded of 312
+  assert.equal(versionTotal({ revision: "312" }, 50), 312);
+  assert.equal(versionTotal({ revision: 1 }, 1), 1);
+  assert.equal(versionTotal({ revision: 3 }, 4), 4); // the history is newer than the report shown
+  assert.equal(versionTotal({ revision: null }, 2), 2);
+  assert.equal(versionTotal({}, 0), 0);
+});
