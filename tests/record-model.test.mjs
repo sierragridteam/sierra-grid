@@ -411,3 +411,24 @@ test("the new report types have a profile and a name", () => {
   assert.equal(typeLabel("SOURCE_HEALTH"), "Source health");
   assert.equal(typeLabel("CHAIN_CONTROL"), "Chain control");
 });
+
+test("a reason the page already gives above is not printed again in the list of changes", async () => {
+  const { withoutReasonsShownAbove } = await import("../src/lib/record-model.ts");
+  const err = "nws: GET https://api.weather.gov/alerts/active: HTTP 503", other = "nws: timeout";
+  const entry = (id, at, detail, extra = {}) => ({ id, at, revision: 2, label: id, detail, badge: { label: "Stale", tone: "elevated" }, ...extra });
+  const entries = [
+    entry("source:nws", 3, err), // the outage as it is now: the reason is in "Needs attention"
+    entry("source:nws", 1, undefined, { sameReasonAs: 3 }), // an earlier one, already pointing at the newest
+    entry("source:nws", 0, other), // the same source with another reason keeps it
+    entry("source:caltrans", 2, err), // another source with the same words keeps them
+  ];
+  const out = withoutReasonsShownAbove(entries, new Map([["source:nws", err]]));
+  assert.deepEqual(out.map((e) => [e.id, e.detail, e.reasonAbove === true, e.sameReasonAs]), [
+    ["source:nws", undefined, true, undefined],
+    ["source:nws", undefined, false, 3],
+    ["source:nws", other, false, undefined],
+    ["source:caltrans", err, false, undefined],
+  ]);
+  // Nothing given above: every entry is as it was.
+  assert.deepEqual(withoutReasonsShownAbove(entries, new Map()), entries);
+});

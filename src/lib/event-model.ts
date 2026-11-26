@@ -28,6 +28,16 @@ export function natureCounts(reports: { nature?: string | null; layer: string }[
   return { occurrences: reports.length - standing.length, standing: standing.length, standingTypes: [...new Set(standing.map(report => typeLabel(report.layer)))] };
 }
 /** A revision saved because a reading confirmed the state, not because anything changed. */
+/**
+ * How many versions a report has: its revision number (revisions are numbered
+ * from 1, changes and readings alike), which is all of them and not only the
+ * page of history that happens to be loaded. Never fewer than are loaded, in
+ * case the report shown is older than the history beside it.
+ */
+export const versionTotal = (report: { revision?: number | string | null }, loaded: number) => {
+  const n = Number(report.revision);
+  return Math.max(loaded, Number.isInteger(n) && n > 0 ? n : 0);
+};
 export const isReading = (revision?: { kind?: string } | null) => revision?.kind === "READING";
 export const severityRank: Record<string, number> = { EXTREME: 4, SEVERE: 3, MODERATE: 2, MINOR: 1, INFO: 0 };
 export const typeLabel = (type: string) => eventTypes.find(([id]) => id === type)?.[1] || otherTypes[type] || humanize(type);
