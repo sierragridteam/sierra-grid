@@ -49,6 +49,18 @@ test("a route closure notice never paints the full monitored route as a closure 
   assert.equal(entries[1].status, "Closure notice attached to route");
   assert.deepEqual(entries[1].feature.geometry, road.geometry);
 });
+test("a closure point is seasonal only when the source says so", () => {
+  const status = (properties) => roadMapEntries({ chain_control: layer([feature("cc:10-2514", { category: "closed", severity: "INFO", severityRank: 0, headline: "Highway 4: Ebbetts Pass winter closure", ...properties })]) })[0];
+  const gate = status({ chainControl: { highway: "Highway 4", seasonal: true, closure: "Ebbetts Pass winter closure" } });
+  assert.equal(gate.status, "Seasonal closure point");
+  assert.equal(gate.label, "Highway 4: Ebbetts Pass winter closure");
+  assert.equal(gate.tone, "brass");
+  // No flag, a false one, or a flag on something that is not a closure: not seasonal.
+  assert.equal(status({ chainControl: { highway: "Highway 108" } }).status, "Reported closure point");
+  assert.equal(status({ chainControl: { seasonal: false } }).status, "Reported closure point");
+  assert.equal(status({}).status, "Reported closure point");
+  assert.equal(status({ category: "r2", chainControl: { level: "R2", seasonal: true } }).status, "R2");
+});
 test("current road map excludes scheduled work, keeps active unlocated incidents and never invents geometry", () => {
   const entries = roadMapEntries({
     road_incident: layer([
