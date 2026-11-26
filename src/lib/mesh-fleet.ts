@@ -21,11 +21,29 @@ export type MeshNode = {
 };
 export type MeshLink = { a: string; b: string; observations: number; bestSnr: number; lastSeen: number; coordinates: [number, number][] };
 
-/** Latest of the two activity clocks, ignoring future stamps (node clocks drift; ours do not). */
+/**
+ * Latest of the two activity clocks, ignoring future stamps (node clocks drift; ours do not).
+ * Activity is what the Grid observed on the mesh: the node's advert or a packet it relayed.
+ * A monitor's read is a second, separate observation and is never counted here: a repeater can
+ * relay while the gateway that reads it has no power or internet, and a node can answer a login
+ * while nothing it sends reaches the Grid. The data service's MCP mesh tools draw the same line.
+ */
 export const lastActive = (n: MeshNode, now: number) => {
   const t = [n.lastHeardAt, n.lastRelayedAt].filter((v): v is number => Number.isFinite(v) && v! <= now);
   return t.length ? Math.max(...t) : undefined;
 };
+
+/**
+ * When a monitor last read the node, if that read is recent enough to say the node is answering
+ * now: within an hour on the relay's schedule, eight for an operator's own monitor (the marks
+ * mesh-monitors.ts uses). Undefined when no monitor reads it, it is marked unreachable, or the
+ * read is older than that.
+ */
+export function monitorReadAt(n: MeshNode, now: number) {
+  const read = n.admin?.lastSuccessAt;
+  if (read === undefined || !Number.isFinite(read) || read > now || n.reachability === "UNREACHABLE") return undefined;
+  return now - read <= (n.admin?.reporterId === "relay" ? HOUR : 8 * HOUR) ? read : undefined;
+}
 
 /** Link strength from the best SNR heard on it (MeshCore decodes down to about −7.5 dB at SF8). */
 export function linkStrength(snr: number): "strong" | "fair" | "weak" {
@@ -63,14 +81,24 @@ export function attention(nodes: MeshNode[], archives: Map<string, V1MeshTelemet
   for (const n of nodes.filter((node) => node.inRegion)) {
     const issues: Issue[] = [];
     const active = lastActive(n, now);
-    if (active === undefined) issues.push({ severity: "warn", text: "No activity on record" });
-    else if (now - active > 2 * DAY) issues.push({ severity: "alarm", text: `Silent for ${ageText(now - active)}` });
-    else if (now - active > 12 * HOUR) issues.push({ severity: "warn", text: `Quiet for ${ageText(now - active)}` });
+    // Each of the two observations qualifies the other and neither replaces it. A node a monitor
+    // is reading is on, so its silence on the mesh is said but does not alarm; a node still
+    // heard or relaying is working, so a monitor that cannot reach it does not alarm either.
+    const read = monitorReadAt(n, now);
+    const readNote = read === undefined ? "" : ` · a monitor read it ${ageText(now - read)} ago`;
+    if (active === undefined) issues.push({ severity: "warn", text: `No activity on record${readNote}` });
+    else if (now - active > 2 * DAY) issues.push({ severity: read === undefined ? "alarm" : "warn", text: `Silent on the mesh for ${ageText(now - active)}${readNote}` });
+    else if (now - active > 12 * HOUR) issues.push({ severity: "warn", text: `Quiet on the mesh for ${ageText(now - active)}${readNote}` });
 
     if (n.admin) {
       const reached = n.admin.lastSuccessAt;
-      if (n.reachability === "UNREACHABLE" && reached !== undefined)
-        issues.push({ severity: now - reached > 7 * DAY ? "alarm" : "warn", text: `Monitor can't reach it (last ${ageText(now - reached)} ago)` });
+      if (n.reachability === "UNREACHABLE" && reached !== undefined) {
+        const working = active !== undefined && now - active <= 12 * HOUR;
+        issues.push({
+          severity: !working && now - reached > 7 * DAY ? "alarm" : "warn",
+          text: `Monitor can't reach it (last ${ageText(now - reached)} ago)${working ? ` · active on the mesh ${ageText(now - active)} ago` : ""}`,
+        });
+      }
       const archive = archives.get(n.key);
       if (archive) {
         const battery = telemetrySeries(archive, "batteryVolts");

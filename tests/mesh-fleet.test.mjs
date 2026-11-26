@@ -30,7 +30,7 @@ test("a healthy, active node needs no attention and shows as live", () => {
 test("silence, unreachability, low and falling battery, and reboots are ranked with reasons", () => {
   const quiet = node({ key: "q", name: "Quiet", lastRelayedAt: now - 20 * H });
   const silent = node({ key: "s", name: "Silent", lastRelayedAt: now - 5 * 24 * H });
-  const sick = node({ key: "b", name: "Sick", reachability: "UNREACHABLE", admin: { lastSuccessAt: now - 9 * 24 * H, reporterId: "alanpi" } });
+  const sick = node({ key: "b", name: "Sick", lastRelayedAt: now - 30 * H, reachability: "UNREACHABLE", admin: { lastSuccessAt: now - 9 * 24 * H, reporterId: "alanpi" } });
   const draining = node({ key: "d", name: "Draining", admin: { lastSuccessAt: now - 10 * 60_000 }, reachability: "REACHABLE" });
   const archives = new Map([
     ["d", archive([sample(now - 20 * H, { batteryVolts: 3.85 }), sample(now - 10 * H, { batteryVolts: 3.75 }), sample(now - H, { batteryVolts: 3.62 })], { reboots: [new Date(now - 5 * H).toISOString()] })],
@@ -38,8 +38,23 @@ test("silence, unreachability, low and falling battery, and reboots are ranked w
   const a = attention([quiet, silent, sick, draining, node({ key: "away", name: "Away", inRegion: false, lastRelayedAt: now - 9 * 24 * H })], archives, now);
   assert.deepEqual(a.map((x) => [x.node.name, x.worst]), [["Sick", "alarm"], ["Silent", "alarm"], ["Draining", "warn"], ["Quiet", "warn"]]);
   assert.deepEqual(a.find((x) => x.node.name === "Draining").issues.map((i) => i.text), ["Battery low · 3.62 V", "Battery falling · −0.23 V in 24 h", "Rebooted in the last 24 h"]);
-  assert.equal(a.find((x) => x.node.name === "Silent").issues[0].text, "Silent for 5 days");
+  assert.equal(a.find((x) => x.node.name === "Silent").issues[0].text, "Silent on the mesh for 5 days");
   assert.equal(nodeTone(sick, a[0], now), "alarm");
+});
+
+test("mesh activity and a monitor's read are separate: each qualifies the other, neither alarms alone", () => {
+  // Relaying ten minutes ago; its monitor has had no answer for nine days (the monitor's gateway lost power).
+  const relaying = node({ key: "r", name: "Relaying", reachability: "UNREACHABLE", admin: { lastSuccessAt: now - 9 * 24 * H, reporterId: "alanpi" } });
+  // Read by the relay's monitor ten minutes ago; nothing from it has reached the Grid for three days.
+  const read = node({ key: "m", name: "Read", lastRelayedAt: now - 3 * 24 * H, reachability: "REACHABLE", admin: { lastSuccessAt: now - 10 * 60_000, reporterId: "relay" } });
+  // A read two hours old is past the relay's schedule: it says nothing about now.
+  const stale = node({ key: "o", name: "Stale read", lastRelayedAt: now - 3 * 24 * H, reachability: "REACHABLE", admin: { lastSuccessAt: now - 2 * H, reporterId: "relay" } });
+  const a = attention([relaying, read, stale], new Map(), now);
+  const of = (name) => a.find((x) => x.node.name === name);
+  assert.equal(lastActive(read, now), now - 3 * 24 * H);
+  assert.deepEqual([of("Relaying").worst, of("Relaying").issues.map((i) => i.text)], ["warn", ["Monitor can't reach it (last 9 days ago) · active on the mesh 10 min ago"]]);
+  assert.deepEqual([of("Read").worst, of("Read").issues.map((i) => i.text)], ["warn", ["Silent on the mesh for 3 days · a monitor read it 10 min ago"]]);
+  assert.deepEqual([of("Stale read").worst, of("Stale read").issues.map((i) => i.text)], ["alarm", ["Silent on the mesh for 3 days"]]);
 });
 
 test("heatmap rows are hourly means; missing hours stay null; traffic is the median reporting node", () => {
