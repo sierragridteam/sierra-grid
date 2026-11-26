@@ -21,12 +21,16 @@ export function roadMapEntries(
   const entries: RoadMapEntry[] = [];
   for (const feature of layers.chain_control?.features || []) {
     const p = feature.properties,
-      closed = p.category === "closed" || p.status === "CLOSED";
+      closed = p.category === "closed" || p.status === "CLOSED",
+      // Only the source's own `true` makes a closure point seasonal.
+      seasonal = closed && p.chainControl?.seasonal === true;
     entries.push({
       feature,
       kind: "restriction",
       label: p.headline,
-      status: closed
+      status: seasonal
+        ? "Seasonal closure point"
+        : closed
         ? "Reported closure point"
         : p.chainControl?.level || "Reported restriction point",
       explanation:
