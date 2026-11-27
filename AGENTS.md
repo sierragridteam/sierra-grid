@@ -18,6 +18,10 @@ Public-data explorer for the Ebbetts Pass corridor, built with Astro,
 - Keep URL state validated (`src/lib/state.ts`). Times are 24-hour Pacific.
 - Put logic that decides what a page says in a pure module with tests
   (`*-model.ts`, `road-corridor.ts`, `mesh-monitors.ts`), not in the view.
+- Prerendered text is read long after it is built, so it carries its own date
+  and never says how things are now (`prerender-model.ts`, `seo-model.ts`;
+  times through `datedTime`). A new page gets its title, description and
+  data links in `src/config/site.ts`.
 - Use pnpm. Run `make verify` and `pnpm test:browser` before a pull request.
 - No credentials, tokens or private data in the repository.
 

@@ -48,3 +48,20 @@ export function parseLocalInput(value: string): number {
   }
   return NaN;
 }
+const dated = (options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-US", { timeZone: regionTimeZone, month: "short", day: "numeric", year: "numeric", hourCycle: "h23", ...options });
+const datedClock = dated({ hour: "2-digit", minute: "2-digit" }), datedDate = dated({});
+/**
+ * A time for text that outlives the moment it was written (a prerendered
+ * page, a link preview): always with its year, so the sentence it stands in
+ * stays true whenever it is read. `regionalTime` drops the year while it is
+ * the current one, which only a page rendered now can do.
+ */
+export function datedTime(value: unknown): string {
+  const t = value instanceof Date ? +value : typeof value === "number" ? value : Date.parse(String(value ?? ""));
+  return Number.isFinite(t) ? `${datedClock.format(t)} PT` : "at a time not reported";
+}
+/** The day alone, with its year: "Nov 27, 2026". */
+export function datedDay(value: unknown): string {
+  const t = value instanceof Date ? +value : typeof value === "number" ? value : Date.parse(String(value ?? ""));
+  return Number.isFinite(t) ? datedDate.format(t) : "a day not reported";
+}

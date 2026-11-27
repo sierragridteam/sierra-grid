@@ -1,0 +1,98 @@
+---
+/**
+ * The page of one report: prerendered whole from the build's snapshot, so it
+ * can be linked, quoted and indexed without a script running. Which reports
+ * get one, and every word on it, is decided in `prerender-model.ts`.
+ */
+import ExplorerLayout from "../../layouts/ExplorerLayout.astro";
+import Callout from "@sierragridteam/design-system/components/Callout.astro";
+import DataDiff from "@sierragridteam/design-system/components/DataDiff.astro";
+import MoreLink from "@sierragridteam/design-system/components/MoreLink.astro";
+import { toHTML } from "@sierragridteam/design-system/lib/ssr";
+import { propertyList, timeline } from "@sierragridteam/design-system/lib/ui";
+import { pageHero } from "../../lib/hero";
+import { datedTime } from "../../lib/time";
+import { snapshot } from "../../lib/build/snapshot";
+import { recordLd, recordPage, type History } from "../../lib/prerender-model";
+import { absolute, alternates, breadcrumbLd, dataUrl, graph, organizationLd, slugIndex, websiteLd } from "../../lib/seo-model";
+import { SITE_NAME } from "../../config/site";
+import type { Report } from "../../lib/event-model";
+
+export async function getStaticPaths() {
+  const snap = await snapshot();
+  if (!snap) return [];
+  const slugs = slugIndex(snap.notable.items.map((report) => report.id));
+  return snap.notable.items.map((report) => ({
+    params: { record: slugs.get(report.id) },
+    props: { report, history: snap.histories[report.id], builtAt: snap.builtAt },
+  }));
+}
+interface Props { report: Report; history: History | undefined; builtAt: number }
+const { report, history, builtAt } = Astro.props;
+const page = recordPage(report, history, builtAt);
+const api = `/api/v1/events/${encodeURIComponent(report.id)}`;
+const data = [{ label: "This report as JSON", path: api }, { label: "Its saved revisions as JSON", path: `${api}/history` }];
+const head = {
+  title: `${page.title} · ${SITE_NAME}`, description: page.description, canonical: absolute(page.path),
+  // A report that has not ended is linkable but not offered to search engines: its page cannot say how it stands now.
+  robots: page.indexable ? undefined : "noindex", alternates: alternates(data),
+};
+const organization = organizationLd();
+const ld = graph(organization, websiteLd(), recordLd(page, report, absolute, String(organization["@id"])),
+  breadcrumbLd([{ name: "Events", path: "/events/" }, { name: page.heading, path: page.path }]));
+const what: Record<string, string> = {
+  first: "First saved by Grid.", reading: "Checked; the answer did not change.", same: "No change to the details shown on this page.",
+  unknown: "The revision before this one was not read, so what changed is not shown.",
+};
+---
+
+<ExplorerLayout view={{ id: "record", label: page.heading, chart: false, parent: "events" }} head={head} ld={ld} ogType="article">
+  <Fragment slot="trail"><a href="/events/">Events</a><span aria-hidden="true"> / </span><span aria-current="page">{page.heading}</span></Fragment>
+  <article class="record-page">
+    <Fragment set:html={toHTML(pageHero({ kicker: page.kicker, title: page.heading, lines: page.lines }))} />
+    <Callout tone={page.note.tone}><p>{page.note.text}</p></Callout>
+    <p class="record-page__actions">
+      <MoreLink href={page.live} text={page.ended ? "Open in the live explorer" : "Open the live report"} />
+      {page.source && <a href={page.source.href} rel="noopener noreferrer">{page.source.label} ↗</a>}
+      <a href={dataUrl(api)}>JSON</a>
+    </p>
+    {page.summary && <section class="card report-block"><h2>Summary</h2><p class="report-summary">{page.summary}</p></section>}
+    <div class="columns columns--wide-narrow report-columns">
+      <div class="report-main">
+        {page.facts.length > 0 && (
+          <section class="card report-block"><h2>Details at the last saved revision</h2><Fragment set:html={toHTML(propertyList({ label: "Details", items: page.facts }))} /></section>
+        )}
+        {page.original && (
+          <section class="card report-block">
+            <h2>Original report</h2>
+            <p class="report-quote report-quote--long">{page.original.text}</p>
+            {page.original.transcript && <details class="report-original"><summary>Call transcript</summary><p class="report-quote report-quote--long">{page.original.transcript}</p></details>}
+          </section>
+        )}
+      </div>
+      <aside class="report-aside" aria-label="Timeline">
+        {page.timeline.length > 0 && (
+          <section class="card report-block">
+            <h2>Timeline</h2>
+            <Fragment set:html={toHTML(timeline({ label: "Report timeline", items: page.timeline.map((m) => ({ time: datedTime(m.at), datetime: new Date(m.at).toISOString(), label: m.label, detail: m.detail, kind: m.system ? "system" as const : "source" as const })) }))} />
+            <p class="meta report-legend"><span class="report-legend__source"></span>Source event <span class="report-legend__system"></span>Grid record</p>
+          </section>
+        )}
+      </aside>
+    </div>
+    <section class="report-section report-history" id="report-versions">
+      <h2>Revision history</h2>
+      <div class="report-versions">
+        {page.revisions.map((r) => (
+          <article class="report-version">
+            {r.what === "changes"
+              ? <DataDiff label={`Revision ${r.revision} · ${datedTime(r.at)}`} changes={r.changes.map((c) => ({ path: c.label, kind: c.kind as "added" | "removed" | "changed", before: c.before, after: c.after }))} />
+              : <Fragment><p class="ds-diff-label">Revision {r.revision} · {datedTime(r.at)}</p><p class="meta">{what[r.what]}</p></Fragment>}
+          </article>
+        ))}
+      </div>
+      {page.historyNote && <p class="meta">{page.historyNote}</p>}
+    </section>
+    <footer class="report-source meta">Grid record <code>{page.id}</code> · page built {datedTime(builtAt)} from the public API · times are Pacific</footer>
+  </article>
+</ExplorerLayout>

@@ -1,0 +1,53 @@
+---
+/**
+ * What a page says before any script runs: where its live data is, and the
+ * record Grid held when the site was built (`prerender-model.ts` decides
+ * every word). The live view replaces it on mount; with scripting off it is
+ * the page.
+ */
+import Callout from "@sierragridteam/design-system/components/Callout.astro";
+import { datedTime } from "../lib/time";
+import { dataUrl } from "../lib/seo-model";
+import type { StaticSection } from "../lib/prerender-model";
+import type { DataLink } from "../config/site";
+interface Props {
+  data: DataLink[];
+  sections: StaticSection[];
+  /** When the record was read; absent when it was not (a development server offline). */
+  builtAt?: number;
+}
+const { data, sections, builtAt } = Astro.props;
+---
+
+<div class="grid-static" data-static-fallback>
+  <Callout tone="brass" title="This page loads its live data in the browser">
+    <p>
+      {builtAt
+        ? `Without JavaScript it shows only what Grid had on record when the page was built, ${datedTime(builtAt)}. Nothing below says how things are now.`
+        : "Without JavaScript it shows no data."}
+      {" "}The live data is public JSON:
+    </p>
+    <ul class="grid-static__data">
+      {data.map((d) => <li><a href={dataUrl(d.path)}>{d.label}</a></li>)}
+    </ul>
+    <p>The whole site is described for programs in <a href="/llms.txt">llms.txt</a>.</p>
+  </Callout>
+  {sections.map((section) => (
+    <section class="grid-static__section" aria-labelledby={`static-${section.id}`}>
+      <h2 id={`static-${section.id}`}>{section.title}</h2>
+      {section.lead && <p class="grid-static__lead">{section.lead}</p>}
+      {section.entries.length > 0 && (
+        <ul class="grid-static__list">
+          {section.entries.map((entry) => (
+            <li>
+              {entry.at !== undefined && Number.isFinite(entry.at) && <time class="meta" datetime={new Date(entry.at).toISOString()}>{datedTime(entry.at)}</time>}
+              {entry.href ? <a href={entry.href}>{entry.text}</a> : <span class="grid-static__text">{entry.text}</span>}
+              {entry.detail && <span class="meta">{entry.detail}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {section.note && <p class="meta">{section.note}</p>}
+    </section>
+  ))}
+</div>

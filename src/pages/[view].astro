@@ -1,6 +1,12 @@
 ---
 import ExplorerLayout from "../layouts/ExplorerLayout.astro";
-import { views, type View } from "../config/views";
+import StaticRecord from "../components/StaticRecord.astro";
+import { toHTML } from "@sierragridteam/design-system/lib/ssr";
+import { views, type View, type ViewId } from "../config/views";
+import { pageMeta } from "../config/site";
+import { pageHero } from "../lib/hero";
+import { snapshot } from "../lib/build/snapshot";
+import { staticSections } from "../lib/prerender-model";
 export function getStaticPaths() {
   return views
     .filter((v) => v.path !== "/")
@@ -13,9 +19,14 @@ interface Props {
   view: View;
 }
 const { view } = Astro.props;
+const meta = pageMeta[view.id];
+const snap = await snapshot();
+const paths = Object.fromEntries(views.map((v) => [v.id, v.path])) as Record<ViewId, string>;
+const sections = snap ? staticSections(view.id, snap, paths) : [];
 ---
 
 <ExplorerLayout view={view}>
-  <h1>{view.label}</h1>
-  <p class="skeleton skeleton--text">Loading this view…</p>
+  <Fragment set:html={toHTML(pageHero({ kicker: "Ebbetts Pass corridor", title: view.label, lead: meta.description }))} />
+  <p class="skeleton skeleton--text grid-loading" aria-hidden="true">&nbsp;</p>
+  <StaticRecord data={meta.data} sections={sections} builtAt={snap?.builtAt} />
 </ExplorerLayout>

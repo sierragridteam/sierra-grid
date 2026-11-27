@@ -1,0 +1,38 @@
+name: Hourly rebuild
+
+# The site prerenders what Grid has on record (road and chain-control changes,
+# burn-line calls, ended reports and their pages), read from the public API at
+# build time. Rebuilding on a schedule keeps that record current for readers
+# that run no JavaScript: search engines, link previews and agents.
+#
+# This workflow only asks Deploy to run; Deploy builds and publishes. It is a
+# file of its own because deploy.yml is kept identical to sierra-website's.
+# A build that cannot read the API fails, and the site already published
+# stays up with its own dated record.
+#
+# GitHub pauses scheduled workflows in a repository with no activity for 60
+# days; re-enable it under Actions if that happens.
+
+on:
+  schedule:
+    # Off the hour, where scheduled runs queue up.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write # to dispatch Deploy; nothing else
+
+concurrency:
+  group: hourly-rebuild
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    # Scheduled runs only ever start on the default branch; this also keeps forks from dispatching.
+    if: ${{ github.repository == 'sierragridteam/sierra-grid' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask Deploy to build and publish main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main

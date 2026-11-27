@@ -6,6 +6,10 @@ https://data.sierragridteam.org in the browser through `@sierragridteam/sdk`
 There is no server of its own and no stored state beyond the URL and two
 display preferences in `localStorage` (units and the chosen weather town).
 
+The build reads the same API once, for what is prerendered: the record each
+page shows before any script runs, and the page of each notable report (see
+"Without JavaScript" below). Nothing prerendered says how things are now.
+
 ## Pages and modules
 
 `src/config/views.ts` maps each route to a module in `src/lib/views/`, loaded
@@ -29,6 +33,11 @@ the address as typed). The host must serve `404.html` for unknown paths.
 
 `/evacuations/` redirects to Wildfires (evacuations lead that page when in
 effect) and `/history/` to Events with past reports included.
+
+`src/pages/events/[record].astro` is the page of one report
+(`/events/<slug>/`): static like the 404 (`data-view="record"`, no module
+mounts, the address stays as typed) and marked under Events in the sidebar.
+`robots.txt`, `llms.txt` and `sitemap.xml` are endpoints in `src/pages/`.
 
 **Answer-first pages** (Roads, Weather, Wildfires, Power, Source health) share
 one structure: `pageHero` with the conclusion as the title, a row of tiles, the
@@ -156,6 +165,66 @@ A development server can read another API (`PUBLIC_GRID_API_ORIGIN`, for a
 sierra-data change that is not deployed). The switch is compiled out of a
 production build.
 
+## Without JavaScript
+
+Search engines' and assistants' crawlers, link previews and an agent's fetch
+mostly run no script, and used to get a heading and "Loading this view…".
+What they get now is decided in two pure modules and one rule.
+
+**The rule: prerendered text carries its own date.** A built page is read
+hours or weeks later, so it never says how things are ("open", "none
+active", "3 h ago"). It says what was saved and when ("closed Nov 17, 2026,
+15:35 PT"), which stays true whenever it is read, and it says where the live
+data is. `datedTime` (`time.ts`) always writes the year, which `regionalTime`
+drops for the current one.
+
+- `config/site.ts` gives each page its own title, description and the JSON
+  it is drawn from. `seo-model.ts` turns that into the head (canonical
+  address, `<link rel="alternate" type="application/json">` per resource,
+  Open Graph), the structured data (the organisation and site on every page,
+  a `Dataset` on pages that are a body of data, a `Report` on a report's
+  page), and the three text files. A route that only sends its reader on
+  (`/evacuations/`, `/history/`) and Search are `noindex`, and the first two
+  give the address they land on as canonical. No licence is stated in the
+  structured data because none has been chosen for the data.
+- `build/snapshot.ts` makes the build's reads, once, shared by every page:
+  about 250 requests, a few at a time. `prerender-model.ts` turns them into
+  what each page says (`staticSections`) and into a report's page
+  (`recordPage`), reusing the models the live views use (`roadRecord`,
+  `sourceRecord`, `fires`, `evacuationEpisodes`, `readingCalls`,
+  `reportProfile`'s timeline, `reportChanges`). The same guards apply: a list
+  read up to a cap says "at least" and "not read", an empty record is "none
+  on record", never "nothing happened", and a change is listed only when the
+  revision before it was read.
+- `StaticRecord.astro` renders that inside `#content` with a note naming the
+  page's JSON. It is the page with scripting off (`@media (scripting:
+  none)`); with scripting on it is not displayed, the page shows its loading
+  state, and `page.ts` removes it when the live view mounts, so the two are
+  never on screen together.
+
+**Reports with a page of their own** are the ones `NOTABLE` names: every
+wildfire, evacuation, weather alert and chain requirement, a power
+interruption rated moderate or above, a road incident rated severe or above
+(moderate is every planned lane closure). The page has the report's details,
+its timeline and what changed at each saved revision, all dated, and links
+to the live report (`/events/?status=all&record=<id>`, the link the explorer
+itself writes) and the JSON. Its address is the id as a slug
+(`cc:hwy4:r2` → `/events/cc-hwy4-r2/`); two ids that would share a slug fail
+the build. A report that has not ended keeps its page, so a link never
+breaks, but the page is `noindex`, is left out of the sitemap, and says only
+that the report had not ended at its last saved revision. A chain
+requirement or an evacuation zone is a slot that can be issued again, which
+is why even "ended" is worded as of a revision. The profile's tiles are not
+used on these pages: they are written for a page rendered now.
+
+**A build that cannot read a list fails**, and the site already published
+stays up with its own dated record; publishing without the record would
+delete every report's page. One report's revisions failing is not that: its
+page says they could not be read. A development server renders without the
+record instead, so it starts offline. `.github/workflows/rebuild.yml` asks
+Deploy to run every hour so the record stays current; it is a file of its
+own because `deploy.yml` is kept identical to sierra-website's.
+
 ## Lifecycle
 
 Static pages use Astro's `ClientRouter`. `page.ts` uses the design system's
@@ -237,6 +306,8 @@ so its MapLibre worker import is transformed normally.
 ## Checks
 
 `make verify` runs the unit tests (`node --test tests/*.test.mjs`), `astro
-check` and a production build. `pnpm test:browser` serves the build on port
-8190 with Python and runs Playwright against the live API, including axe
-accessibility checks and phone-width overflow checks.
+check` and a production build. The build reads the live API (see "Without
+JavaScript"), so it needs the network and fails when the API cannot be read.
+`pnpm test:browser` serves the build on port 8190 with Python and runs
+Playwright against the live API, including axe accessibility checks and
+phone-width overflow checks; `seo.spec.ts` reads pages with JavaScript off.

@@ -4,7 +4,14 @@ import SummaryBanner from "@sierragridteam/design-system/components/SummaryBanne
 import Card from "@sierragridteam/design-system/components/Card.astro";
 import MoreLink from "@sierragridteam/design-system/components/MoreLink.astro";
 import Button from "@sierragridteam/design-system/components/Button.astro";
-import { views } from "../config/views";
+import StaticRecord from "../components/StaticRecord.astro";
+import { views, type ViewId } from "../config/views";
+import { pageMeta } from "../config/site";
+import { snapshot } from "../lib/build/snapshot";
+import { staticSections } from "../lib/prerender-model";
+const snap = await snapshot();
+const paths = Object.fromEntries(views.map((v) => [v.id, v.path])) as Record<ViewId, string>;
+const sections = snap ? staticSections("discover", snap, paths) : [];
 ---
 <ExplorerLayout view={views[0]}>
   <div class="stack grid-overview">
@@ -31,5 +38,5 @@ import { views } from "../config/views";
       </Card>
     </div>
   </div>
-  <noscript>Live regional observations require JavaScript.</noscript>
+  <StaticRecord data={pageMeta.discover.data} sections={sections} builtAt={snap?.builtAt} />
 </ExplorerLayout>

@@ -5,14 +5,26 @@ import Icon from "@sierragridteam/design-system/components/Icon.astro";
 import LineChart from "@sierragridteam/design-system/components/LineChart.astro";
 import ThemeSwitcher from "@sierragridteam/design-system/components/ThemeSwitcher.astro";
 import { views, type View } from "../config/views";
-/** A page outside the views (the 404): the shell and sidebar, but no domain module mounts. */
-type StaticPage = { id: "not-found"; label: string; chart: false };
+import { viewHead, viewLd, type Head } from "../lib/seo-model";
+import { SITE_NAME } from "../config/site";
+/**
+ * A page outside the views: the shell and sidebar, but no domain module
+ * mounts and its address stays as typed. The 404, and the page of one report
+ * (`record`, which sits under Events in the sidebar).
+ */
+type StaticPage = { id: "not-found" | "record"; label: string; chart: false; parent?: View["id"] };
 interface Props {
   view: View | StaticPage;
-  /** Keep this page out of search results. */
-  noindex?: boolean;
+  /** A static page's own head. A view's comes from its entry in `config/site.ts`. */
+  head?: Head;
+  ld?: Record<string, unknown>;
+  ogType?: "website" | "article";
 }
-const { view, noindex = false } = Astro.props;
+const { view, ogType } = Astro.props;
+const isView = (v: View | StaticPage): v is View => "path" in v;
+const head = Astro.props.head ?? (isView(view) ? viewHead(view)
+  : { title: `${view.label} · ${SITE_NAME}`, description: "Roads, weather, wildfires, power and the SIERRA mesh network for the Ebbetts Pass corridor, from public sources.", canonical: "", robots: "noindex", alternates: [] });
+const ld = Astro.props.ld ?? (isView(view) ? viewLd(view) : undefined);
 const groups = [
   {
     label: "Explore",
@@ -38,11 +50,12 @@ const groups = [
     items: [["scanners", "Scanner feeds", "users"], ["sources", "Source health", "info"]],
   },
 ];
-const parent = view.id === "cameras" ? "roads"
-  : view.id === "WEATHER_ALERT" ? "weather" : view.id === "EVACUATION" ? "WILDFIRE" : view.id;
+const at = isView(view) ? view.id : view.parent;
+const parent = at === "cameras" ? "roads"
+  : at === "WEATHER_ALERT" ? "weather" : at === "EVACUATION" ? "WILDFIRE" : at;
 ---
 
-<BaseLayout title={view.label} noindex={noindex}>
+<BaseLayout head={head} ld={ld} ogType={ogType}>
   <a class="skip-link" href="#main">
     Skip to content
   </a>
@@ -90,12 +103,12 @@ const parent = view.id === "cameras" ? "roads"
       </header>
       <div class="main">
       <div class="main__inner main__inner--wide">
-        <main id="main" data-view-root data-view={view.id} tabindex="-1">
+        <main id="main" data-view-root data-view={view.id} data-parent={parent} tabindex="-1">
           <nav
             id="trail"
             class="grid-trail"
             aria-label="Page hierarchy"
-          ></nav>
+          ><slot name="trail" /></nav>
           <div id="view-period" hidden></div>
           <section id="content" aria-busy="true">
             <slot />
@@ -118,13 +131,15 @@ const parent = view.id === "cameras" ? "roads"
             aria-live="polite"
           ></div>
 
-          <noscript>
-            <p class="callout">
-              Live observations need JavaScript. The navigation and{" "}
-              <a href="https://data.sierragridteam.org">public data site</a>{" "}
-              remain available.
-            </p>
-          </noscript>
+          {isView(view) && (
+            <noscript>
+              <p class="callout">
+                Live observations need JavaScript. The navigation and{" "}
+                <a href="https://data.sierragridteam.org">public data site</a>{" "}
+                remain available.
+              </p>
+            </noscript>
+          )}
         </main>
       </div>
       </div>

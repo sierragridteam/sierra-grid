@@ -22,13 +22,23 @@ export function mountExplorer() {
   definePage(() => true, run);
 }
 async function run({ root: next, signal }: PageContext) {
-  // The 404 page is static: it has the shell (so the drawer works) but no view to mount,
-  // and its address must stay as typed rather than be normalised to a real route.
-  if (next.dataset.view === "not-found") {
+  // A static page (the 404, the page of one report) has the shell, so the drawer works, but no
+  // view to mount, and its address must stay as typed rather than be normalised to a real route.
+  if (next.dataset.view === "not-found" || next.dataset.view === "record") {
     installDrawer(signal);
+    // The sidebar persists across pages; nothing else will move its mark here.
+    const parent = next.dataset.parent || "";
+    document.querySelectorAll<HTMLAnchorElement>(".grid-sidebar a[data-view]").forEach((link) => {
+      const active = link.dataset.view === parent;
+      link.classList.toggle("is-active", active);
+      if (active) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    });
     next.querySelector("#content")?.setAttribute("aria-busy", "false");
     return;
   }
+  // What the page says without JavaScript (the record as built) gives way to the live view.
+  next.querySelectorAll("[data-static-fallback]").forEach((el) => el.remove());
   const referenceNow = Date.now();
   let state = parseState(new URL(location.href));
   // Legacy B links remain usable, but all newly shared links use real route paths.

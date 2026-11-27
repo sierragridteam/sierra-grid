@@ -13,16 +13,20 @@ import "../styles/mesh-network.css";
 import "../styles/explorer.css";
 import "../styles/event-browser.css";
 import IconSprite from "@sierragridteam/design-system/components/IconSprite.astro";
+import type { Head } from "../lib/seo-model";
+import { absolute, ldJson } from "../lib/seo-model";
+import { SITE_NAME } from "../config/site";
 interface Props {
-  title: string;
-  description?: string;
-  noindex?: boolean;
+  /** Title, description, canonical address and the page's data as alternates. */
+  head: Head;
+  /** The page's structured data: one schema.org graph. */
+  ld?: Record<string, unknown>;
+  /** "article" for a page about one report; every other page is part of the site. */
+  ogType?: "website" | "article";
 }
-const {
-  title,
-  description = "Roads, weather, wildfires, power and the SIERRA mesh network for the Ebbetts Pass corridor, from public sources.",
-  noindex = false,
-} = Astro.props;
+const { head, ld, ogType = "website" } = Astro.props;
+// The mark is square and small; link previews use it as a thumbnail beside the title.
+const image = absolute("/brand/sierra-mark.png");
 ---
 
 <!doctype html>
@@ -30,9 +34,21 @@ const {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
-    <title>{title} · S.I.E.R.R.A Grid</title>
-    <meta name="description" content={description} />
-    {noindex && <meta name="robots" content="noindex" />}
+    <title>{head.title}</title>
+    <meta name="description" content={head.description} />
+    {head.robots && <meta name="robots" content={head.robots} />}
+    {head.canonical && <link rel="canonical" href={head.canonical} />}
+    {head.alternates.map((a) => <link rel="alternate" type={a.type} href={a.href} title={a.title} />)}
+    <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt: this site, for language models" />
+    <meta property="og:site_name" content={SITE_NAME} />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:title" content={head.title} />
+    <meta property="og:description" content={head.description} />
+    {head.canonical && <meta property="og:url" content={head.canonical} />}
+    <meta property="og:image" content={image} />
+    <meta property="og:locale" content="en_US" />
+    <meta name="twitter:card" content="summary" />
+    {ld && <script type="application/ld+json" is:inline set:html={ldJson(ld)} />}
     <ThemeScript />
     <ClientRouter />
   </head>
