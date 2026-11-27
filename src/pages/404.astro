@@ -15,7 +15,7 @@ const places: [id: string, label: string, about: string][] = [
 const path = (id: string) => views.find((view) => view.id === id)!.path;
 ---
 
-<ExplorerLayout view={{ id: "not-found", label: "Page not found", chart: false }} noindex>
+<ExplorerLayout view={{ id: "not-found", label: "Page not found", chart: false }}>
   <header class="page-header grid-hero">
     <div class="page-header__text">
       <span class="kicker">Page not found</span>

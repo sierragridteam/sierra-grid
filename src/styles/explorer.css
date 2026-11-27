@@ -39,3 +39,23 @@
 .not-found-places { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; max-width: 40rem; }
 .not-found-places li { display: grid; gap: 2px; }
 .not-found-places a { font-weight: var(--fw-semibold); }
+
+/* What a page says with scripting off: where its data is, and the record as built. With scripting
+   on, the page shows its loading state until the live view mounts and removes this. */
+.grid-static { display: none; gap: var(--space-6); max-width: 60rem; }
+.grid-static > * { margin: 0; }
+.grid-static__section { display: grid; gap: var(--space-3); }
+.grid-static__section > * { margin: 0; }
+.grid-static__lead { color: var(--ink-secondary); font-size: var(--fs-ui); max-width: 90ch; }
+.grid-static__data { margin: 0; padding-left: var(--space-5); }
+.grid-static__list { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.grid-static__list li { display: grid; gap: 2px; }
+.grid-static__list a, .grid-static__text { font-weight: var(--fw-semibold); }
+@media (scripting: none) {
+  .grid-static { display: grid; }
+  .grid-loading { display: none; }
+}
+/* A report's own page: prerendered whole, the same blocks as the live report. */
+.record-page { display: grid; gap: var(--space-5); min-width: 0; }
+.record-page > * { margin: 0; min-width: 0; }
+.record-page__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-5); font-size: var(--fs-ui); }

@@ -464,7 +464,7 @@ export const BURN_WINDOW_DAYS = 30;
 const burnDayText = (v?: string) => ({ BURN_DAY_YES: "Burn day", BURN_DAY_NO: "No-burn day", BURN_DAY_MARGINAL: "Burn day above 3,500 ft" } as Record<string, string>)[v ?? ""] ?? "Unknown";
 const permissionText = (v?: string) => ({ BURN_PERMISSION_ALLOWED: "Allowed", BURN_PERMISSION_PROHIBITED: "Not allowed" } as Record<string, string>)[v ?? ""] ?? "Unknown";
 const calfireText = (v?: string) => (v ? humanize(v) : "Unknown");
-const phone = (v?: string) => (v && /^\+1\d{10}$/.test(v) ? `(${v.slice(2, 5)}) ${v.slice(5, 8)}-${v.slice(8)}` : v);
+export const phone = (v?: string) => (v && /^\+1\d{10}$/.test(v) ? `(${v.slice(2, 5)}) ${v.slice(5, 8)}-${v.slice(8)}` : v);
 
 /**
  * County burn status: an ambient event that never ends and whose value is when

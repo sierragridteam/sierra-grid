@@ -14,6 +14,9 @@ The public data explorer for the Ebbetts Pass corridor: roads, weather, wildfire
 | Wildfires, Power | What is active now; the season's record when nothing is |
 | Burn day | Today's burn status by county (an Events filter) |
 | Scanner feeds, Source health | Radio feeds to listen to; whether each data source is current |
+| A report's page (`/events/<slug>/`) | One notable report, prerendered: its details, timeline and what changed at each saved revision |
+
+Pages load their live data in the browser. For readers that run no JavaScript (search engines, link previews, agents), each page also carries what Grid had on record when the site was built, every statement with its date, and names the public JSON it is drawn from; `/llms.txt`, `/robots.txt` and `/sitemap.xml` describe the site to programs. See [docs/architecture.md](docs/architecture.md#without-javascript).
 
 ## Develop
 
@@ -26,7 +29,7 @@ make verify         # unit tests, type check, production build
 pnpm test:browser   # Playwright against the build; needs Python 3 and Playwright's Chromium
 ```
 
-There are no credentials and no demo data: every page reads the live public API, and the browser tests do too, so a test can fail when a source is briefly unavailable.
+There are no credentials and no demo data: every page reads the live public API, and the browser tests do too, so a test can fail when a source is briefly unavailable. A production build reads the API as well (about 250 requests, for the prerendered record and report pages) and fails if it cannot. It also reads `/events/pages.json` from the published site, so a report keeps its page once it has one. `pnpm dev` starts without either and renders pages without the record.
 
 `?preview=live` on Wildfires and Power shows the layout for an active fire, evacuation or shutoff using the most recent past records. It exists for testing, is marked "Test view, not live" on the page, and is only available in development builds or when the site is built with `PUBLIC_GRID_PREVIEW=1`.
 
@@ -37,6 +40,8 @@ See [docs/architecture.md](docs/architecture.md) for how the pages are put toget
 A push to `main` that passes the checks is built and published to grid.sierragridteam.org by `.github/workflows/deploy.yml`: an S3 bucket behind CloudFront, provisioned separately by the organization's infrastructure repository. There are no stored credentials. The job runs in the `production` environment (restricted to `main`) and exchanges its GitHub OIDC token for a role that can only sync this site's bucket and invalidate its distribution. Its target comes from four repository variables: `DEPLOY_ROLE_ARN`, `DEPLOY_AWS_REGION`, `DEPLOY_S3_BUCKET` and `DEPLOY_CLOUDFRONT_DISTRIBUTION_ID`.
 
 The workflow is the same file as sierra-website's apart from the checks workflow's name and the site URL; change the two together.
+
+`.github/workflows/rebuild.yml` asks Deploy to run every hour, so the prerendered record stays current without a push. It dispatches Deploy with the workflow's own token (`actions: write`) and stores nothing, and only when the checks passed on the commit `main` is at: Deploy run by hand does not run the checks itself. If the `production` environment is given required reviewers, each hourly run will wait for one.
 
 ## Third parties at run time
 

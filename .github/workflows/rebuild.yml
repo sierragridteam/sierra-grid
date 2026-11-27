@@ -1,0 +1,60 @@
+name: Hourly rebuild
+
+# The site prerenders what Grid has on record (road and chain-control changes,
+# burn-line calls, ended reports and their pages), read from the public API at
+# build time. Rebuilding on a schedule keeps that record current for readers
+# that run no JavaScript: search engines, link previews and agents.
+#
+# This workflow only asks Deploy to run; Deploy builds and publishes. It is a
+# file of its own because deploy.yml is kept identical to sierra-website's.
+# A build that cannot read the API fails, and the site already published
+# stays up with its own dated record.
+#
+# Deploy run by hand builds whatever main holds, without the checks. So this
+# asks only when the checks passed on the commit main is at: a push whose
+# checks failed (or are still running) is not published by the clock.
+#
+# GitHub pauses scheduled workflows in a repository with no activity for 60
+# days; re-enable it under Actions if that happens.
+
+on:
+  schedule:
+    # Off the hour, where scheduled runs queue up.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write # to read the checks' result and dispatch Deploy
+  contents: read # to read which commit main is at
+
+concurrency:
+  group: hourly-rebuild
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    # Scheduled runs only ever start on the default branch; this also keeps forks from dispatching.
+    if: ${{ github.repository == 'sierragridteam/sierra-grid' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask Deploy to build and publish main, if its checks passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          conclusion=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --event push --commit "$sha" --limit 1 --json conclusion --jq '.[0].conclusion // "none"')
+          if [ "$conclusion" != "success" ]; then
+            echo "::notice::Not rebuilding: Grid checks on main ($sha) are '$conclusion', not 'success'."
+            exit 0
+          fi
+          # Deploy cancels a run in progress for a newer one, and a cancelled upload can leave pages
+          # pointing at assets already removed. A deploy under way is left to finish.
+          busy=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy.yml --limit 20 --json status --jq '[.[] | select(.status != "completed")] | length')
+          if [ "$busy" != "0" ]; then
+            echo "::notice::Not rebuilding: a Deploy run is queued or in progress."
+            exit 0
+          fi
+          # This job is green once Deploy is asked; say here when the last one did not publish.
+          last=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy.yml --status completed --limit 1 --json conclusion,url --jq '.[0] | "\(.conclusion) \(.url)"')
+          case "$last" in failure*|timed_out*) echo "::warning::The last Deploy run did not publish: $last" ;; esac
+          gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
