@@ -47,4 +47,14 @@ jobs:
             echo "::notice::Not rebuilding: Grid checks on main ($sha) are '$conclusion', not 'success'."
             exit 0
           fi
+          # Deploy cancels a run in progress for a newer one, and a cancelled upload can leave pages
+          # pointing at assets already removed. A deploy under way is left to finish.
+          busy=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy.yml --limit 20 --json status --jq '[.[] | select(.status != "completed")] | length')
+          if [ "$busy" != "0" ]; then
+            echo "::notice::Not rebuilding: a Deploy run is queued or in progress."
+            exit 0
+          fi
+          # This job is green once Deploy is asked; say here when the last one did not publish.
+          last=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy.yml --status completed --limit 1 --json conclusion,url --jq '.[0] | "\(.conclusion) \(.url)"')
+          case "$last" in failure*|timed_out*) echo "::warning::The last Deploy run did not publish: $last" ;; esac
           gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main

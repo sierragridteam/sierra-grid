@@ -210,22 +210,45 @@ its timeline and what changed at each saved revision, all dated, and links
 to the live report (`/events/?status=all&record=<id>`, the link the explorer
 itself writes) and the JSON. Its address is the id as a slug
 (`cc:hwy4:r2` → `/events/cc-hwy4-r2/`); two ids that would share a slug fail
-the build. A report that has not ended keeps its page, so a link never
-breaks, but the page is `noindex`, is left out of the sitemap, and says only
-that the report had not ended at its last saved revision. A chain
+the build. A report that has not ended has its page, so it can be linked
+from the start, but the page is `noindex`, is left out of the sitemap, and
+says only that the report had not ended at its last saved revision.
+
+A report keeps its page once it has one. An outage's severity falls as
+customers come back, and a page that vanished when it dropped under the
+threshold would break every link to it. Every build writes the ids of its
+report pages to `/events/pages.json`; the next build reads that from the
+published site and builds a page for any id the lists no longer return
+(reading the report by id), dropping one only when the API no longer has
+the report. A development server does not read the published list.
+
+When a report began is the source's own time (`effective`) once that time
+had come by the last saved revision, else when Grid first saved it, else
+not said (`beganAt`). It is never the report's `observedAt`, which is its
+newest revision's time: for an ended report, when it ended. The evacuation
+list counts a zone at the highest level any saved revision gave it. Entries
+the record models word for a live page ("now restricted", "R2 in effect")
+are put in the past (`inPastTense`), and the source record leaves out each
+feed's reason, which is upstream error text. A chain
 requirement or an evacuation zone is a slot that can be issued again, which
 is why even "ended" is worded as of a revision. The profile's tiles are not
 used on these pages: they are written for a page rendered now.
 
 **A build that cannot read a list fails**, and the site already published
 stays up with its own dated record; publishing without the record would
-delete every report's page. One report's revisions failing is not that: its
+delete every report's page. So does one whose lists answer but hold fewer
+than half the reports already published (`plausible`), and one where more
+than a tenth of the reports' revisions could not be read: both are the
+service at fault, not news. One report's revisions failing is not that: its
 page says they could not be read. A development server renders without the
 record instead, so it starts offline. `.github/workflows/rebuild.yml` asks
-Deploy to run every hour so the record stays current, and only when the
+Deploy to run every hour so the record stays current. It asks only when the
 checks passed on the commit `main` is at (a dispatched Deploy runs no checks
-of its own); it is a file of its own because `deploy.yml` is kept identical
-to sierra-website's.
+of its own) and no Deploy run is queued or in progress (Deploy cancels a run
+under way for a newer one, and a cancelled upload can leave pages pointing
+at assets already removed). It is green once Deploy is asked, so it warns
+when the last Deploy run failed. It is a file of its own because
+`deploy.yml` is kept identical to sierra-website's.
 
 ## Lifecycle
 

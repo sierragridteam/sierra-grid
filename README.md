@@ -29,7 +29,7 @@ make verify         # unit tests, type check, production build
 pnpm test:browser   # Playwright against the build; needs Python 3 and Playwright's Chromium
 ```
 
-There are no credentials and no demo data: every page reads the live public API, and the browser tests do too, so a test can fail when a source is briefly unavailable. A production build reads the API as well (about 250 requests, for the prerendered record and report pages) and fails if it cannot; `pnpm dev` starts without it and renders pages without the record.
+There are no credentials and no demo data: every page reads the live public API, and the browser tests do too, so a test can fail when a source is briefly unavailable. A production build reads the API as well (about 250 requests, for the prerendered record and report pages) and fails if it cannot. It also reads `/events/pages.json` from the published site, so a report keeps its page once it has one. `pnpm dev` starts without either and renders pages without the record.
 
 `?preview=live` on Wildfires and Power shows the layout for an active fire, evacuation or shutoff using the most recent past records. It exists for testing, is marked "Test view, not live" on the page, and is only available in development builds or when the site is built with `PUBLIC_GRID_PREVIEW=1`.
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { NOTABLE, hasEnded, isNotable, recordLd, recordPage, staticSections } from "../src/lib/prerender-model.ts";
+import { NOTABLE, beganAt, hasEnded, inPastTense, isNotable, plausible, recordLd, recordPage, staticSections } from "../src/lib/prerender-model.ts";
 import { absolute, deepLink, recordPath } from "../src/lib/seo-model.ts";
 
 const builtAt = Date.parse("2026-11-27T18:29:00Z");
@@ -77,11 +77,12 @@ test("a page does not pass off part of a history as the whole, or guess a change
   const missing = recordPage({ ...r, revision: 7 }, undefined, builtAt);
   assert.equal(missing.historyNote, "The saved revisions of this report could not be read when this page was built.");
   assert.deepEqual(missing.revisions, []);
-  assert.match(missing.description, /^Chain control requirement for Tamarack, from Caltrans \(cwwp2\.dot\.ca\.gov\)\. Saved by Grid from Nov 22, 2026; ended by /, "no first save claimed without revision 1");
+  assert.match(missing.description, /^Chain control requirement for Tamarack, from Caltrans \(cwwp2\.dot\.ca\.gov\)\. On record with Grid; ended by .*\. 7 saved revisions\.$/, "no first save claimed without revision 1, and no changes promised that the page cannot show");
   const partial = recordPage({ ...r, revision: 45 }, { complete: false, revisions: [rev(45, "2026-11-23T18:26:13Z", r), rev(44, "2026-11-23T18:00:00Z", chain("ACTIVE", "Tamarack")), rev(42, "2026-11-23T17:00:00Z", chain("ACTIVE", "Tamarack"))] }, builtAt);
   assert.equal(partial.historyNote, "3 revisions of 45 shown. The rest are in the live report.");
   assert.equal(partial.firstSaved, undefined);
   assert.deepEqual(partial.revisions.map((x) => x.what), ["changes", "unknown", "unknown"], "42 has no 41 beside it, and 44 no 43");
+  assert.match(partial.description, /45 saved revisions\.$/, "only three of them are on the page");
 });
 
 test("a report page's structured data is a Report with its source and dates", () => {
@@ -196,4 +197,96 @@ test("power, alerts and events list only what has ended; a page with no record o
   const [overview] = staticSections("discover", snap, { roads: "/roads/", WILDFIRE: "/wildfires/", POWER: "/power/" });
   assert.deepEqual(overview.entries.map((e) => e.href), ["/roads/", "/wildfires/", "/power/"]);
   for (const view of ["discover", "events", "roads", "weather", "WILDFIRE", "POWER", "mesh", "sources"]) assert.ok(!PRESENT.test(words(staticSections(view, snap, { roads: "/roads/" }))), view);
+});
+
+test("when a report began is the source's time once it had come, else Grid's first save, and never its newest revision's time", () => {
+  // An evacuation zone carries no time of its own; its observedAt is when it was resolved.
+  const zone = report("evac:US-CA-Toulumne100", "EVACUATION", { headline: "Evacuation Warning — US-CA-Toulumne100", areaLabel: "TUOLUMNE", observedAt: "2026-07-07T16:19:00Z", ingestedAt: "2026-07-07T16:19:05Z", evacuation: { zoneId: "US-CA-Toulumne100", level: "WARNING", county: "TUOLUMNE", eventType: "" } });
+  const issued = { ...zone, status: "ACTIVE", evacuation: { ...zone.evacuation, level: "ORDER" } };
+  const history = { complete: true, revisions: [rev(2, "2026-07-07T16:19:05Z", zone), rev(1, "2026-07-07T00:19:00Z", issued)] };
+  assert.deepEqual(beganAt(zone, history), { at: Date.parse("2026-07-07T00:19:00Z"), by: "grid" });
+  const page = recordPage({ ...zone, revision: 2 }, history, builtAt);
+  assert.equal(page.lines.at(-1), "First saved by Grid Jul 6, 2026, 17:19 PT", "not 'Began', and not the day it was lifted");
+  assert.match(page.title, /, Jul 6, 2026$/);
+  // Without revision 1 nothing is known of its start: no date in the title, no line, no time in a list.
+  const blind = recordPage({ ...zone, revision: 2 }, { complete: false, revisions: [rev(2, "2026-07-07T16:19:05Z", zone)] }, builtAt);
+  assert.equal(blind.title, "Evacuation Warning — US-CA-Toulumne100");
+  assert.deepEqual(blind.lines, ["TUOLUMNE", "a source that was not named"]);
+  // An alert withdrawn before its onset did not begin then; a scheduled closure has not begun.
+  const alert = report("wx:x", "WEATHER_ALERT", { status: "EXPIRED", headline: "Red Flag Warning", effective: "2026-10-03T18:00:00Z" });
+  const withdrawn = { complete: true, revisions: [rev(2, "2026-10-03T16:58:00Z", alert), rev(1, "2026-10-02T21:00:00Z", { ...alert, status: "ACTIVE" })] };
+  assert.equal(beganAt(alert, withdrawn).by, "grid");
+  assert.equal(recordPage(alert, withdrawn, builtAt).lines.at(-1), "First saved by Grid Oct 2, 2026, 14:00 PT");
+  const begun = report("calfire:a", "WILDFIRE", { headline: "Gann Fire", effective: "2026-08-04T00:27:00Z" });
+  assert.deepEqual(beganAt(begun, { complete: true, revisions: [rev(1, "2026-08-04T00:40:00Z", begun)] }), { at: Date.parse("2026-08-04T00:27:00Z"), by: "source" });
+
+  // The evacuation list: the day it was first saved, and the highest level it reached.
+  const [, evacuations] = staticSections("WILDFIRE", empty({ notable: { items: [zone], incomplete: false }, histories: { [zone.id]: history } }));
+  assert.equal(evacuations.entries[0].text, "Tuolumne County: 1 order");
+  assert.equal(new Date(evacuations.entries[0].at).toISOString(), "2026-07-07T00:19:00.000Z");
+  assert.match(evacuations.lead, /Each is counted at the highest level it reached\./);
+  // The events list gives a report with no known start no time, rather than a wrong one.
+  const [events] = staticSections("events", empty({ notable: { items: [{ ...zone, revision: 2 }], incomplete: false }, histories: {} }));
+  assert.equal(events.entries[0].at, undefined);
+  // A report still at its first revision is its own first save.
+  assert.equal(staticSections("events", empty({ notable: { items: [zone], incomplete: false }, histories: {} }))[0].entries[0].at, Date.parse(zone.ingestedAt));
+});
+
+test("a page's revisions carry the same clock as its first and last save", () => {
+  const r = report("pge:1", "POWER", { status: "RESOLVED", headline: "Power outage — 121 customers" });
+  const saved = (n, observedAt, ingestedAt, event) => ({ revision: n, kind: "CHANGE", observedAt, ingestedAt, event: { ...event, revision: n } });
+  const history = { complete: true, revisions: [saved(2, "2026-11-27T17:48:00Z", "2026-11-27T17:58:00Z", r), saved(1, "2026-11-27T11:34:00Z", "2026-11-27T11:43:00Z", { ...r, status: "ACTIVE" })] };
+  const page = recordPage({ ...r, revision: 2 }, history, builtAt);
+  assert.deepEqual(page.revisions.map((x) => new Date(x.at).toISOString()), [page.lastSaved, page.firstSaved]);
+});
+
+test("entries worded for a live page are said in the past on one read later", () => {
+  assert.equal(inPastTense("Hwy 49 Angels Camp to Sonora now restricted"), "Hwy 49 Angels Camp to Sonora became restricted");
+  assert.equal(inPastTense("R2 now Tamarack to Mount Reba Road"), "R2 stretch changed to Tamarack to Mount Reba Road");
+  assert.equal(inPastTense("Hwy 4 Arnold to Bear Valley: chains now R1"), "Hwy 4 Arnold to Bear Valley: chains changed to R1");
+  assert.equal(inPastTense("R2 in effect"), "R2 was in effect");
+  assert.equal(inPastTense("Now Cottage Springs to Tamarack"), "Changed to Cottage Springs to Tamarack");
+  for (const kept of ["R2 posted again", "Hwy 4 Arnold to Bear Valley reopened", "Hwy 4 Arnold to Bear Valley: chains lifted", "Lifted", "First saved by Grid"]) assert.equal(inPastTense(kept), kept);
+  // On the pages: a road that became restricted, and a stretch that moved, in the record and on the requirement's own timeline.
+  const road = (status) => report("road:hwy49", "ROAD_SEGMENT", { status: "ACTIVE", roadSegment: { roadId: "hwy49", name: "Hwy 49", section: "Angels Camp to Sonora", status, beyond: [], causes: [], chains: [] } });
+  const a = chain("ACTIVE", "Poison Springs to Mount Reba Road"), b = chain("ACTIVE", "Tamarack to Mount Reba Road");
+  const revisions = [rev(2, "2026-11-25T19:22:00Z", road("RESTRICTED")), rev(1, "2026-11-20T00:00:00Z", road("OPEN")), rev(2, "2026-11-23T18:36:13Z", b), rev(1, "2026-11-23T03:05:00Z", a)];
+  const [record] = staticSections("roads", empty({ roads: { ...empty().roads, revisions } }));
+  assert.deepEqual(record.entries.map((e) => e.text), ["Hwy 49 Angels Camp to Sonora became restricted", "R2 stretch changed to Tamarack to Mount Reba Road", "R2 posted"]);
+  const page = recordPage({ ...b, revision: 2 }, { complete: true, revisions: revisions.slice(2) }, builtAt);
+  assert.ok(page.timeline.some((m) => m.label === "Changed to Tamarack to Mount Reba Road"));
+  for (const text of [...record.entries.map((e) => e.text), ...page.timeline.map((m) => m.label)]) assert.ok(!/\bnow\b|in effect$/i.test(text), text);
+});
+
+test("the power list is of the same weeks as its count, and a lower bound is called one twice", () => {
+  const outage = (id, effective, n = 300) => report(`pge:${id}`, "POWER", { status: "RESOLVED", headline: `Power outage — ${n} customers`, effective, power: { customersAffected: n } });
+  const inside = outage("in", "2026-11-20T19:27:00Z"), before = outage("old", "2026-08-20T19:27:00Z");
+  const snap = empty({ notable: { items: [inside, before], incomplete: false }, power: { items: [inside], incomplete: true, weeks: 13 } });
+  const [power] = staticSections("POWER", snap);
+  assert.deepEqual(power.entries.map((e) => e.href), ["/events/pge-in/"], "a page from before the period is not under this period's count");
+  assert.match(power.lead, /^At least 1 interruption that has ended is on record for the 13 weeks before .*, with at least 300 customers affected in all/);
+  assert.match(power.lead, /Listed below are those of that period with a page of their own\.$/);
+  // The Overview repeats the count, not the sentence about a list it does not show.
+  const [overview] = staticSections("discover", snap, { POWER: "/power/" });
+  assert.ok(overview.entries[0].detail.startsWith("At least 1 interruption") && !/Listed below/.test(overview.entries[0].detail));
+});
+
+test("the source record is worded for a page read later, with each period dated and no upstream error text", () => {
+  const health = (status, since, error = "") => ({ ...report("source:caltrans", "SOURCE_HEALTH", { status: "ACTIVE", areaLabel: "Caltrans (chain control)" }), sourceHealth: { sourceId: "caltrans", status, since, error } });
+  const revisions = [rev(3, "2026-11-18T10:00:00Z", health("OK", "2026-11-18T10:00:00Z")), rev(2, "2026-11-18T09:00:00Z", health("UNAVAILABLE", "2026-11-18T09:00:00Z", "dial tcp 10.40.34.72:49726: connection refused")), rev(1, "2026-11-01T00:00:00Z", health("OK", "2026-11-01T00:00:00Z"))];
+  const sources = { ...empty().sources, health: [health("OK", "2026-11-18T10:00:00Z")], revisions };
+  const [, changes] = staticSections("sources", empty({ sources }));
+  assert.match(changes.lead, /^Each time a feed went stale or unavailable and came back, as Grid saved it in the 30 days before Nov 27, 2026, 10:29 PT, newest first\./);
+  assert.deepEqual(changes.entries.map((e) => [e.text, e.detail]), [["Caltrans (chain control): current again", undefined], ["Caltrans (chain control): unavailable", undefined]]);
+  assert.ok(!JSON.stringify(changes).includes("10.40.34.72"));
+  const [, quiet] = staticSections("sources", empty({ sources: { ...sources, revisions: [] } }));
+  assert.equal(quiet.note, "No status change is on record in the 30 days before Nov 27, 2026, 10:29 PT. That is what Grid saved, not proof that every feed was current throughout.");
+  assert.ok(!/last 30 days/i.test(JSON.stringify(quiet)), "a period is named by its dates, not by 'last'");
+});
+
+test("a build does not publish a record far shorter than the one already published", () => {
+  assert.equal(plausible({ published: 0, listed: 0 }), undefined, "the first build has nothing to compare with");
+  assert.equal(plausible({ published: 226, listed: 219 }), undefined, "a few reports fell under the threshold and keep their pages");
+  assert.match(plausible({ published: 226, listed: 3 }), /only 3 of the 226 reports with a published page are in the lists read/);
+  assert.equal(plausible({ published: 10, listed: 0 }), undefined, "too few to tell a fault from a quiet season");
 });

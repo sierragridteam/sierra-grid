@@ -12,7 +12,7 @@
 import type { ViewId } from "../config/views.ts";
 import { datedDay, datedTime } from "./time.ts";
 import { humanize, isReading, reportChanges, reportFields, reportTitle, severityRank, typeLabel, type Report, type Revision } from "./event-model.ts";
-import { isOwnService, recordList, roadRecord, sourceRecord } from "./record-model.ts";
+import { isOwnService, recordList, roadRecord, sourceChanges } from "./record-model.ts";
 import { acresText, customers, evacuationEpisodes, fireSeason, fires, isShutoff, startedAt, type Report as ConditionReport } from "./conditions-model.ts";
 import { firstSaved, genericTimeline, phone, readingCalls, reportProfile } from "./report-profile.ts";
 import { deepLink, eventSlug, recordPath } from "./seo-model.ts";
@@ -69,6 +69,18 @@ export function isNotable(report: { layer: string; severity: string }) {
   const rule = NOTABLE.find((r) => r.layer === report.layer);
   return !!rule && (severityRank[report.severity] ?? -1) >= (rule.severityMin ? severityRank[rule.severityMin] : -1);
 }
+/**
+ * Whether the lists the build read can be believed, against the pages already
+ * published. A report keeps its page once it has one, so nearly every
+ * published id should still be listed; when fewer than half are, the service
+ * answered short, and publishing would say "none on record" of a record that
+ * is there. Returns why not, or nothing.
+ */
+export function plausible({ published, listed }: { published: number; listed: number }): string | undefined {
+  return published >= 20 && listed < published / 2
+    ? `only ${listed} of the ${published} reports with a published page are in the lists read; refusing to publish a record that short`
+    : undefined;
+}
 /** Over, as the API says it: not active and not scheduled. Only then is a report's page offered to search engines. */
 export const hasEnded = (report: { status: string }) => report.status === "RESOLVED" || report.status === "EXPIRED";
 
@@ -84,7 +96,47 @@ function attributionOf(report: Report) {
 /** Coordinates are on the map of the live report; they are not details a reader scans, and their jitter is not a change. */
 const isCoordinate = (label: string) => /(^| · )(lat|lng|lon|long|latitude|longitude)$/i.test(label);
 const kindOf = (report: Report) => KIND[report.layer] ?? `${typeLabel(report.layer)} report`;
-const beganAt = (report: Report) => [ms(report.effective), ms(report.observedAt), ms(report.ingestedAt)].find(Number.isFinite) ?? NaN;
+/**
+ * When a report began, and who says so. The source's own time (`effective`)
+ * when it had come by the last saved revision; an alert's onset can lie after
+ * the alert was withdrawn, and a scheduled closure's lies ahead, and neither
+ * "began" then. Otherwise when Grid first saved it, known only with revision
+ * 1 in hand. Never the report's `observedAt`: that is its newest revision's
+ * time, which for an ended report is when it ended.
+ */
+export function beganAt(report: Report, history?: History): { at: number; by: "source" | "grid" | "unknown" } {
+  const effective = ms(report.effective), last = lastSavedAt(report, history), first = firstSaved(history?.revisions ?? [], report);
+  if (Number.isFinite(effective) && !(effective > last)) return { at: effective, by: "source" };
+  return Number.isFinite(first) ? { at: first, by: "grid" } : { at: NaN, by: "unknown" };
+}
+/** The report with its start filled in, for the models that read `effective` first (`fires`, `evacuationEpisodes`, `startedAt`). */
+function withStart<T extends Report>(report: T, history?: History): T {
+  const began = beganAt(report, history);
+  // With no start known, the models fall back to the newest revision's time; the entry then carries no time at all (`timed`).
+  return Number.isFinite(began.at) ? { ...report, effective: new Date(began.at).toISOString() } : report;
+}
+/** An entry's time, only when the report's start is known. */
+const timed = (report: Report, history?: History) => { const at = beganAt(report, history).at; return Number.isFinite(at) ? at : undefined; };
+const LEVELS = ["ORDER", "WARNING"];
+/** An evacuation zone at the highest level any saved revision gave it: a zone issued as an order and eased to a warning before it was lifted was an order. */
+function atHighestLevel<T extends Report>(report: T, history?: History): T {
+  const levels = [report, ...(history?.revisions ?? []).map((r) => r.event)].map((e) => e.evacuation?.level ?? "");
+  const top = LEVELS.find((level) => levels.includes(level));
+  return top && report.evacuation && report.evacuation.level !== top ? { ...report, evacuation: { ...report.evacuation, level: top } } : report;
+}
+/**
+ * The record models word a change for a page rendered beside the live state
+ * ("now restricted", "R2 in effect"). On a page read later the same entry is
+ * said in the past, so that no line lifted from it reads as the present.
+ */
+export function inPastTense(label: string): string {
+  return label
+    .replace(/^Now /, "Changed to ")
+    .replace(/: chains now /, ": chains changed to ")
+    .replace(/^(R\d|Chain control) now /, "$1 stretch changed to ")
+    .replace(/ now /, " became ")
+    .replace(/ in effect$/, " was in effect");
+}
 /** When the report last changed, as far as the build read: its newest saved revision, else the report's own receipt time. */
 function lastSavedAt(report: Report, history?: History) {
   const newest = [...(history?.revisions ?? [])].sort((a, b) => Number(b.revision) - Number(a.revision))[0];
@@ -130,7 +182,7 @@ export function recordPage(report: Report, history: History | undefined, builtAt
   const ended = hasEnded(report);
   const revisions = history?.revisions ?? [];
   const ordered = [...revisions].sort((a, b) => Number(b.revision) - Number(a.revision));
-  const last = lastSavedAt(report, history), first = firstSaved(revisions, report), began = beganAt(report);
+  const last = lastSavedAt(report, history), first = firstSaved(revisions, report), began = beganAt(report, history);
   const kind = kindOf(report), from = attributionOf(report), where = report.areaLabel || "";
   const heading = reportTitle(report);
   const complete = !!history?.complete;
@@ -140,11 +192,11 @@ export function recordPage(report: Report, history: History | undefined, builtAt
   const profile = reportProfile(report, revisions, builtAt, { complete });
   const moments = (profile ?? genericTimeline(report, revisions, builtAt)).timeline
     .filter((m) => m.label !== "Now" && Number.isFinite(ms(m.datetime)))
-    .map((m) => ({ at: ms(m.datetime), label: String(m.label), detail: m.detail ? String(m.detail) : undefined, system: m.kind === "system" }));
+    .map((m) => ({ at: ms(m.datetime), label: inPastTense(String(m.label)), detail: m.detail ? String(m.detail) : undefined, system: m.kind === "system" }));
 
   const byNumber = new Map(revisions.map((r) => [Number(r.revision), r]));
   const listed: RecordRevision[] = ordered.slice(0, RECORD_REVISIONS).map((r) => {
-    const n = Number(r.revision), before = byNumber.get(n - 1), at = ms(r.observedAt) || ms(r.ingestedAt);
+    const n = Number(r.revision), before = byNumber.get(n - 1), at = ms(r.ingestedAt) || ms(r.observedAt);
     if (isReading(r)) return { revision: n, at, what: "reading", changes: [] };
     if (n === 1) return { revision: n, at, what: "first", changes: [] };
     // Without the revision before it, what changed is not known, and is not guessed.
@@ -173,10 +225,10 @@ export function recordPage(report: Report, history: History | undefined, builtAt
 
   return {
     id: report.id, slug: eventSlug(report.id), path: recordPath(report.id), live: deepLink(report.id),
-    title: `${heading}, ${datedDay(began)}`,
-    description: `${kind}${where ? ` for ${where}` : ""}, from ${from}. ${Number.isFinite(first) ? `First saved by Grid ${datedTime(first)}` : `Saved by Grid from ${datedDay(began)}`}${ended ? `; ended by ${datedTime(last)}` : ""}. ${total > 1 ? `${plural(total, "saved revision")}, with what changed in each.` : "One saved revision."}`,
+    title: Number.isFinite(began.at) ? `${heading}, ${datedDay(began.at)}` : heading,
+    description: `${kind}${where ? ` for ${where}` : ""}, from ${from}. ${Number.isFinite(first) ? `First saved by Grid ${datedTime(first)}` : "On record with Grid"}${ended ? `; ended by ${datedTime(last)}` : ""}. ${total > 1 ? `${plural(total, "saved revision")}${history && !historyNote ? ", with what changed in each" : ""}.` : "One saved revision."}`,
     kicker: `${kind} · on record`, heading,
-    lines: [where, from, Number.isFinite(began) ? `Began ${datedTime(began)}` : ""].filter(Boolean),
+    lines: [where, from, began.by === "source" ? `Began ${datedTime(began.at)}` : began.by === "grid" ? `First saved by Grid ${datedTime(began.at)}` : ""].filter(Boolean),
     ended, indexable: ended,
     lastSaved: Number.isFinite(last) ? new Date(last).toISOString() : undefined,
     firstSaved: Number.isFinite(first) ? new Date(first).toISOString() : undefined,
@@ -203,7 +255,11 @@ export function recordLd(page: RecordPage, report: Report, absolute: (path: stri
 // ---- The record on each page --------------------------------------------
 
 export type StaticEntry = { at?: number; text: string; detail?: string; href?: string };
-export type StaticSection = { id: string; title: string; lead?: string; entries: StaticEntry[]; note?: string };
+export type StaticSection = {
+  id: string; title: string; lead?: string; entries: StaticEntry[]; note?: string;
+  /** The lead without what it says of its own list ("listed below"), for the Overview, which repeats the lead and not the list. */
+  summary?: string;
+};
 
 /** Entries a section lists; the rest are counted in its note. */
 const CAP = 40;
@@ -230,7 +286,7 @@ function roadSections(snap: Snapshot): StaticSection[] {
     {
       id: "road-record", title: "Chain controls and road status on record",
       lead: `Each chain requirement posted, changed and lifted, and each monitored road closing, reopening or coming under chains, as Grid saved it in ${roads.incomplete ? "up to " : ""}${period}, newest first.${Number.isFinite(began) ? ` Road status has been on record since ${datedDay(began)}.` : ""}`,
-      entries: list.shown.map((e) => ({ at: e.at, text: e.label, detail: e.detail, href: link(e.id, e.revision) })),
+      entries: list.shown.map((e) => ({ at: e.at, text: inPastTense(e.label), detail: e.detail, href: link(e.id, e.revision) })),
       note: list.shown.length ? list.note || undefined
         : roads.incomplete ? "No change in the part of the record that was read. Older entries were not read." : `No change is on record in ${period}. That is what Grid saved, not proof that nothing changed.`,
     },
@@ -245,7 +301,7 @@ function roadSections(snap: Snapshot): StaticSection[] {
 
 function fireSections(snap: Snapshot): StaticSection[] {
   const link = linker(snap), least = snap.notable.incomplete ? "At least " : "";
-  const reports = snap.notable.items as unknown as (ConditionReport & { layer: string })[];
+  const reports = snap.notable.items.map((r) => atHighestLevel(withStart(r, snap.histories[r.id]), snap.histories[r.id])) as unknown as (ConditionReport & { layer: string })[];
   const all = fires(reports.filter((r) => r.layer === "WILDFIRE")), season = fireSeason(all);
   const episodes = evacuationEpisodes(reports.filter((r) => r.layer === "EVACUATION"), regionTimeZone);
   const zones = episodes.reduce((n, e) => n + e.orders + e.warnings + e.others, 0);
@@ -263,7 +319,7 @@ function fireSections(snap: Snapshot): StaticSection[] {
     {
       id: "evacuation-record", title: "Evacuation orders and warnings on record",
       lead: episodes.length
-        ? `${least}${plural(zones, "evacuation zone notice")} on record, grouped by the day and county they were issued in. From Cal OES zone data, for reference only: an order or warning in effect now is live data.`
+        ? `${least}${plural(zones, "evacuation zone notice")} on record, grouped by county and by the day each took effect or, where the source gave no time, the day Grid first saved it. Each is counted at the highest level it reached. From Cal OES zone data, for reference only: an order or warning in effect now is live data.`
         : `No evacuation order or warning in the corridor is on record with Grid as read ${datedTime(snap.builtAt)}. That is what Grid has saved, not the state of any zone now.`,
       ...capped(episodes.map((e) => ({
         at: e.at, href: link(e.id),
@@ -277,10 +333,13 @@ function fireSections(snap: Snapshot): StaticSection[] {
 function powerSections(snap: Snapshot): StaticSection[] {
   const link = linker(snap), past = snap.power.items as unknown as ConditionReport[], least = snap.power.incomplete ? "At least " : "";
   const shutoffs = past.filter(isShutoff).length, total = past.reduce((n, r) => n + customers(r), 0);
-  const notable = (snap.notable.items.filter((r) => r.layer === "POWER" && hasEnded(r)) as unknown as ConditionReport[]).sort((a, b) => startedAt(b) - startedAt(a));
+  const from = snap.builtAt - snap.power.weeks * 7 * DAY;
+  const notable = (snap.notable.items.filter((r) => r.layer === "POWER" && hasEnded(r)).map((r) => withStart(r, snap.histories[r.id])) as unknown as ConditionReport[])
+    .filter((r) => startedAt(r) >= from).sort((a, b) => startedAt(b) - startedAt(a));
+  const counted = `${least}${plural(past.length, "interruption")} that ${past.length === 1 ? "has" : "have"} ended ${past.length === 1 ? "is" : "are"} on record for the ${snap.power.weeks} weeks before ${datedTime(snap.builtAt)}, ${shutoffs ? `${plural(shutoffs, "of them a safety shutoff", "of them safety shutoffs")}, ` : ""}with ${least.toLowerCase()}${total.toLocaleString("en-US")} customers affected in all (a customer out twice is counted twice). From PG&E's outage data as Grid saved it.`;
   return [{
     id: "power-record", title: "Power interruptions on record",
-    lead: `${least}${plural(past.length, "interruption")} that ${past.length === 1 ? "has" : "have"} ended ${past.length === 1 ? "is" : "are"} on record for the ${snap.power.weeks} weeks before ${datedTime(snap.builtAt)}, ${shutoffs ? `${plural(shutoffs, "of them a safety shutoff", "of them safety shutoffs")}, ` : ""}with ${total.toLocaleString("en-US")} customers affected in all (a customer out twice is counted twice). From PG&E's outage data as Grid saved it. Listed below are those rated moderate or above.`,
+    summary: counted, lead: `${counted} Listed below are those of that period with a page of their own.`,
     ...capped(notable.map((r) => ({
       at: startedAt(r), text: r.headline.replace(/\.$/, ""), href: link(r.id),
       detail: r.areaLabel || undefined,
@@ -290,12 +349,13 @@ function powerSections(snap: Snapshot): StaticSection[] {
 
 function alertSections(snap: Snapshot): StaticSection[] {
   const link = linker(snap);
-  const alerts = snap.notable.items.filter((r) => r.layer === "WEATHER_ALERT" && hasEnded(r)).sort((a, b) => beganAt(b) - beganAt(a));
+  const at = (r: Report) => timed(r, snap.histories[r.id]);
+  const alerts = snap.notable.items.filter((r) => r.layer === "WEATHER_ALERT" && hasEnded(r)).sort((a, b) => (at(b) ?? 0) - (at(a) ?? 0));
   return [{
     id: "alert-record", title: "Weather alerts on record",
     lead: `National Weather Service watches, warnings and advisories for the corridor that Grid saved and that have since ended, newest first, as read ${datedTime(snap.builtAt)}. An alert in effect now is live data.`,
     ...capped(alerts.map((r) => ({
-      at: beganAt(r), text: reportTitle(r), href: link(r.id),
+      at: at(r), text: reportTitle(r), href: link(r.id),
       // One NWS product is several alerts, one per zone group: where each applies is what tells them apart.
       detail: [Number.isFinite(ms(r.expires)) ? `until ${datedTime(r.expires)}` : "", clip(r.areaLabel || r.weatherAlert?.areaDesc || "", 140)].filter(Boolean).join(" · ") || undefined,
     })), snap.notable.incomplete, "alerts"),
@@ -329,11 +389,10 @@ function burnSections(snap: Snapshot): StaticSection[] {
 function sourceSections(snap: Snapshot): StaticSection[] {
   const { sources } = snap;
   const feeds = sources.rows.filter((s) => !isOwnService(s));
-  const record = sourceRecord({
-    events: { state: "ok", value: sources.health, asOf: snap.builtAt },
-    history: { state: "ok", value: { revisions: sources.revisions, incomplete: sources.incomplete }, asOf: snap.builtAt },
-    days: sources.days, from: sources.from,
-  });
+  // A record is shown when the API keeps one: health events, or revisions of them.
+  const kept = sources.health.some((e) => e.layer === "SOURCE_HEALTH") || sources.revisions.some((r) => r.event.layer === "SOURCE_HEALTH");
+  const list = recordList(sourceChanges(sources.revisions), SOURCE_ENTRIES, sources.incomplete);
+  const period = `the ${sources.days} days before ${datedTime(snap.builtAt)}`;
   const every = (seconds?: number) => (!seconds ? "" : seconds < 3600 ? `read every ${Math.round(seconds / 60)} min` : `read every ${Math.round(seconds / 3600)} h`);
   return [
     {
@@ -342,11 +401,14 @@ function sourceSections(snap: Snapshot): StaticSection[] {
       entries: feeds.map((s) => ({ text: s.name, detail: [s.attribution, every(s.pollIntervalSeconds)].filter(Boolean).join(" · ") || undefined, href: /^https?:\/\//i.test(s.homepageUrl ?? "") ? s.homepageUrl : undefined }))
         .sort((a, b) => a.text.localeCompare(b.text)),
     },
-    ...(record.panel ? [{
+    ...(kept ? [{
       id: "source-record", title: "Status changes on record",
-      lead: `${record.panel.kicker}. Read ${datedTime(snap.builtAt)}.`,
-      entries: record.panel.entries.map((e) => ({ at: e.at, text: `${e.label}: ${e.badge.label.toLowerCase()}`, detail: e.detail, href: deepLink(e.id, e.revision) })),
-      note: record.panel.message ?? record.panel.note,
+      lead: `Each time a feed went stale or unavailable and came back, as Grid saved it in ${sources.incomplete ? "up to " : ""}${period}, newest first. Whether each feed is current now is live data.`,
+      // The reason a feed gave is upstream error text (addresses, stack fragments); it stays on the live page and in the report.
+      entries: list.shown.map((e) => ({ at: e.at, text: `${e.label}: ${e.badge.label.toLowerCase()}`, href: deepLink(e.id, e.revision) })),
+      note: list.shown.length ? list.note || undefined
+        : sources.incomplete ? "No status change in the part of the record that was read. Older entries were not read."
+        : `No status change is on record in ${period}. That is what Grid saved, not proof that every feed was current throughout.`,
     } satisfies StaticSection] : []),
   ];
 }
@@ -362,13 +424,14 @@ function meshSections(snap: Snapshot): StaticSection[] {
 }
 
 function eventsSections(snap: Snapshot): StaticSection[] {
-  const ended = snap.notable.items.filter(hasEnded).sort((a, b) => beganAt(b) - beganAt(a));
+  const at = (r: Report) => timed(r, snap.histories[r.id]);
+  const ended = snap.notable.items.filter(hasEnded).sort((a, b) => (at(b) ?? 0) - (at(a) ?? 0));
   const counts = NOTABLE.map(({ layer }) => [layer, ended.filter((r) => r.layer === layer).length] as const).filter(([, n]) => n);
   const words: Record<string, [string, string]> = { WILDFIRE: ["wildfire", "wildfires"], EVACUATION: ["evacuation notice", "evacuation notices"], WEATHER_ALERT: ["weather alert", "weather alerts"], CHAIN_CONTROL: ["chain requirement", "chain requirements"], POWER: ["power interruption", "power interruptions"], ROAD_INCIDENT: ["road incident", "road incidents"] };
   return [{
     id: "events-record", title: "Ended reports with a page of their own",
     lead: `${snap.notable.incomplete ? "At least " : ""}${plural(ended.length, "ended report")} ${ended.length === 1 ? "has" : "have"} a page with its timeline and what changed at each saved revision${counts.length ? `: ${counts.map(([layer, n]) => plural(n, ...words[layer])).join(", ")}` : ""}. Newest first, as read ${datedTime(snap.builtAt)}. Every other report, and anything still in effect, is in the live explorer.`,
-    ...capped(ended.map((r) => ({ at: beganAt(r), text: reportTitle(r), detail: [kindOf(r), r.areaLabel].filter(Boolean).join(" · "), href: recordPath(r.id) })), snap.notable.incomplete, "reports"),
+    ...capped(ended.map((r) => ({ at: at(r), text: reportTitle(r), detail: [kindOf(r), r.areaLabel].filter(Boolean).join(" · "), href: recordPath(r.id) })), snap.notable.incomplete, "reports"),
   }];
 }
 
@@ -390,7 +453,7 @@ function overviewSections(snap: Snapshot, paths: Partial<Record<ViewId, string>>
   return [{
     id: "overview-record", title: "What Grid has on record",
     lead: `Grid keeps every version of every report it reads. This is where the record is, as read ${datedTime(snap.builtAt)}; what is happening now is live data.`,
-    entries: from.flatMap(([id, sections]) => (sections[0] && paths[id] ? [{ text: sections[0].title, detail: sections[0].lead, href: paths[id] }] : [])),
+    entries: from.flatMap(([id, sections]) => (sections[0] && paths[id] ? [{ text: sections[0].title, detail: sections[0].summary ?? sections[0].lead, href: paths[id] }] : [])),
   }];
 }
 
@@ -413,7 +476,7 @@ export function staticSections(view: ViewId, snap: Snapshot, paths: Partial<Reco
 }
 
 /** Road entries listed: a storm week alone is some ninety. */
-const ROAD_ENTRIES = 100;
+const ROAD_ENTRIES = 100, SOURCE_ENTRIES = 60;
 /** The power record reaches this far back, as the Power page's own does. */
 export const POWER_WEEKS = 13;
 /** The road and source records on a prerendered page: a month, where the live panels show a week and a month. */

@@ -9,11 +9,12 @@
  * not that: its page says they could not be read. A development server
  * renders without the record instead, so it starts offline.
  */
-import { createSierraClient, type EventQuery } from "@sierragridteam/sdk";
+import { createSierraClient, SierraApiError, type EventQuery } from "@sierragridteam/sdk";
 import { GRID_API_ORIGIN } from "../client";
 import { corridor } from "../state";
 import type { Report, Revision } from "../event-model";
-import { NOTABLE, POWER_WEEKS, ROAD_DAYS, SOURCE_DAYS, periodFrom, type History, type Snapshot } from "../prerender-model";
+import { NOTABLE, POWER_WEEKS, ROAD_DAYS, SOURCE_DAYS, periodFrom, plausible, type History, type Snapshot } from "../prerender-model";
+import { SITE_ORIGIN } from "../../config/site";
 
 const origin = GRID_API_ORIGIN.startsWith("//") ? `https:${GRID_API_ORIGIN}` : GRID_API_ORIGIN;
 const client = createSierraClient({ baseUrl: origin, timeoutMs: 30_000 });
@@ -67,6 +68,45 @@ async function history(id: string, kind: ("CHANGE" | "READING")[]): Promise<Hist
     return undefined;
   }
 }
+/**
+ * The ids that had a page in the site now published (`/events/pages.json`,
+ * written by every build). A report keeps its page once it has one: an
+ * outage's severity falls as customers come back, and a page that vanished
+ * when it dropped under the threshold would break every link to it. Empty
+ * before the first build that wrote the list (the host answers 404).
+ */
+async function publishedIds(): Promise<string[]> {
+  let last: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await wait(1500 * attempt);
+    try {
+      const response = await fetch(`${SITE_ORIGIN}/events/pages.json`, { signal: AbortSignal.timeout(20_000) });
+      if (response.status === 404) return [];
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = (await response.json()) as { ids?: unknown };
+      if (!Array.isArray(body.ids) || !body.ids.every((id) => typeof id === "string")) throw new Error("not a list of ids");
+      return body.ids as string[];
+    } catch (error) { last = error; }
+  }
+  throw new Error(`The list of report pages already published could not be read (${last instanceof Error ? last.message : "unknown error"})`);
+}
+/** One report by id, for a page kept from an earlier build. Undefined when the API no longer has it. */
+async function kept(id: string): Promise<Report | undefined> {
+  let last: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await wait(1500 * attempt);
+    try {
+      const result = await client.getEvent(id);
+      if (result.notModified) throw new Error("no body");
+      // The page shows no map; the shape is not carried into the build.
+      return { ...result.data, geometry: null } as Report;
+    } catch (error) {
+      if (error instanceof SierraApiError && error.status === 404) return undefined;
+      last = error;
+    }
+  }
+  throw new Error(`Grid API: report ${id}, which has a published page, could not be read (${last instanceof Error ? last.message : "unknown error"})`);
+}
 /** `work` over `items`, a few at a time: a few hundred reports' revisions without a burst at the API. */
 async function each<T, U>(items: T[], limit: number, work: (item: T) => Promise<U>): Promise<U[]> {
   const out = new Array<U>(items.length);
@@ -80,7 +120,9 @@ async function each<T, U>(items: T[], limit: number, work: (item: T) => Promise<
 async function load(): Promise<Snapshot> {
   const builtAt = Date.now(), to = new Date(Math.ceil(builtAt / 3_600_000) * 3_600_000).toISOString();
   const roadFrom = periodFrom(builtAt, ROAD_DAYS), sourceFrom = periodFrom(builtAt, SOURCE_DAYS);
-  const [notableLists, segments, roadRevisions, burn, sources, health, healthRevisions, mesh, power, scanners, cameras] = await Promise.all([
+  const [published, notableLists, segments, roadRevisions, burn, sources, health, healthRevisions, mesh, power, scanners, cameras] = await Promise.all([
+    // A development server shows this build's own list; it does not depend on the published site.
+    import.meta.env.DEV ? [] : publishedIds(),
     Promise.all(NOTABLE.map((rule) => events(`${rule.layer} reports`, { place: corridor, layer: [rule.layer], status: EVERY_STATUS, ...(rule.severityMin ? { severityMin: rule.severityMin } : {}) } as EventQuery))),
     events("monitored roads", { place: corridor, layer: ["ROAD_SEGMENT"] } as EventQuery, 2),
     revisions("the road record", { place: corridor, layer: ["CHAIN_CONTROL", "ROAD_SEGMENT"], from: new Date(roadFrom).toISOString(), to }),
@@ -93,8 +135,16 @@ async function load(): Promise<Snapshot> {
     read("scanner feeds", () => client.listScanners({ place: corridor })),
     read("road cameras", () => client.listCameras({ place: corridor })),
   ]);
-  const notable = { items: notableLists.flatMap((list) => list.items), incomplete: notableLists.some((list) => list.incomplete) };
+  const listed = notableLists.flatMap((list) => list.items), found = new Set(listed.map((report) => report.id));
+  // A list that answered but came back far shorter than what is published is a fault upstream, not news.
+  const doubt = plausible({ published: published.length, listed: published.filter((id) => found.has(id)).length });
+  if (doubt) throw new Error(`Grid API: ${doubt}`);
+  const carried = (await each(published.filter((id) => !found.has(id)), 6, kept)).filter((report): report is Report => !!report);
+  const notable = { items: [...listed, ...carried], incomplete: notableLists.some((list) => list.incomplete) };
   const histories = await each(notable.items, 6, (report) => history(report.id, ["CHANGE"]));
+  const unread = histories.filter((h) => !h).length;
+  // A few reports' revisions failing is theirs alone; most of them failing is the endpoint.
+  if (unread > Math.max(5, notable.items.length * 0.1)) throw new Error(`Grid API: the revisions of ${unread} of ${notable.items.length} reports could not be read`);
   const burnHistories = await each(burn.items, 2, (report) => history(report.id, ["CHANGE", "READING"]));
   return {
     builtAt, notable,
