@@ -113,9 +113,10 @@ test("llms.txt says what a scriptless fetch gets, where the live data is, and ho
   assert.match(text, /A fetch that runs no JavaScript gets/);
   assert.match(text, /Nothing here is an all-clear/);
   assert.match(text, /\(226 in this build\)/);
-  assert.ok(text.includes("https://grid.sierragridteam.org/events/?status=all&record=<id>"));
-  assert.ok(text.includes(absolute(recordPath("cc:hwy4:r2"))));
-  assert.ok(text.includes("https://data.sierragridteam.org/mcp"));
+  // Each address as written, whole: a link is right or it is not.
+  const links = new Set([...text.matchAll(/https:\/\/[^\s)`\]]+/g)].map((m) => m[0].replace(/[.,;:]+$/, "")));
+  for (const link of ["https://grid.sierragridteam.org/events/?status=all&record=<id>", absolute(recordPath("cc:hwy4:r2")), "https://data.sierragridteam.org/mcp", "https://data.sierragridteam.org/llms.txt", "https://data.sierragridteam.org/api/openapi.json", "https://grid.sierragridteam.org/events/pages.json", "https://grid.sierragridteam.org/sitemap.xml"])
+    assert.ok(links.has(link), link);
   for (const view of views) {
     const listed = text.includes(`](${absolute(view.path)}): `);
     assert.equal(listed, pageMeta[view.id].index && canonicalPath(view) === view.path, view.id);
