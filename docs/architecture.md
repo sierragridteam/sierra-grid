@@ -222,8 +222,10 @@ stays up with its own dated record; publishing without the record would
 delete every report's page. One report's revisions failing is not that: its
 page says they could not be read. A development server renders without the
 record instead, so it starts offline. `.github/workflows/rebuild.yml` asks
-Deploy to run every hour so the record stays current; it is a file of its
-own because `deploy.yml` is kept identical to sierra-website's.
+Deploy to run every hour so the record stays current, and only when the
+checks passed on the commit `main` is at (a dispatched Deploy runs no checks
+of its own); it is a file of its own because `deploy.yml` is kept identical
+to sierra-website's.
 
 ## Lifecycle
 

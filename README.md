@@ -41,7 +41,7 @@ A push to `main` that passes the checks is built and published to grid.sierragri
 
 The workflow is the same file as sierra-website's apart from the checks workflow's name and the site URL; change the two together.
 
-`.github/workflows/rebuild.yml` asks Deploy to run every hour, so the prerendered record stays current without a push. It dispatches Deploy with the workflow's own token (`actions: write`) and stores nothing. If the `production` environment is given required reviewers, each hourly run will wait for one.
+`.github/workflows/rebuild.yml` asks Deploy to run every hour, so the prerendered record stays current without a push. It dispatches Deploy with the workflow's own token (`actions: write`) and stores nothing, and only when the checks passed on the commit `main` is at: Deploy run by hand does not run the checks itself. If the `production` environment is given required reviewers, each hourly run will wait for one.
 
 ## Third parties at run time
 
